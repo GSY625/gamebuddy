@@ -1,0 +1,11 @@
+{
+  "name": "@gamebuddy/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tauri 桌面壳 — 需安装 Rust 后构建",
+  "scripts": {
+    "dev": "npm run dev -w @gamebuddy/web",
+    "build:web": "npm run build -w @gamebuddy/web",
+    "tauri": "echo Install Rust from https://rustup.rs then: cargo install tauri-cli && tauri build"
+  }
+}

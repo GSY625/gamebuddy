@@ -1,0 +1,26 @@
+{
+  "name": "gamebuddy",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "server"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev -w server",
+    "dev:web": "npm run dev -w @gamebuddy/web",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
+    "build": "npm run build -w server && npm run build -w @gamebuddy/web",
+    "db:migrate": "npm run db:migrate -w server",
+    "db:seed": "npm run db:seed -w server",
+    "docker:up": "docker compose up -d"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "overrides": {
+    "prisma": "5.22.0",
+    "@prisma/client": "5.22.0"
+  }
+}

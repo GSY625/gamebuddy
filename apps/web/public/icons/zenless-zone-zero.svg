@@ -1,0 +1,30 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="256" height="256" rx="34" fill="#F48A17"/>
+  <path d="M0 210H256V256H0V210Z" fill="#111111"/>
+
+  <path d="M43 213C55 171 72 142 97 126C108 120 118 117 128 117C138 117 148 120 159 126C184 142 201 171 213 213H43Z" fill="#2A2B31"/>
+  <path d="M33 168C41 147 57 132 73 125L84 165L71 195C59 191 44 182 33 168Z" fill="#2F3037"/>
+  <path d="M223 168C215 147 199 132 183 125L172 165L185 195C197 191 212 182 223 168Z" fill="#2F3037"/>
+
+  <path d="M71 109C71 74 96 48 128 48C160 48 185 74 185 109V142H71V109Z" fill="#F1F4F8"/>
+  <path d="M70 116C78 76 97 49 127 41C153 34 179 43 194 64C173 59 152 61 132 72C112 83 92 101 70 116Z" fill="#DCE1E9"/>
+  <path d="M59 110C75 92 94 79 117 71C142 63 168 64 193 77C182 96 157 109 132 115C105 121 80 120 59 110Z" fill="#EEF2F6"/>
+  <path d="M95 72C117 54 146 52 166 61C148 64 130 72 116 86C104 98 89 107 72 110C79 95 85 82 95 72Z" fill="#F9FBFD"/>
+
+  <path d="M84 107C92 93 105 87 117 88C129 90 137 100 137 113C137 126 128 136 114 139C99 142 86 135 80 123C78 118 79 112 84 107Z" fill="#FFFFFF"/>
+  <path d="M94 115C98 106 106 100 114 100C121 100 126 104 127 111C128 119 124 127 117 130C109 134 100 131 95 124C93 121 92 118 94 115Z" fill="#F6C94A"/>
+  <circle cx="110" cy="116" r="8" fill="#1A1A1A"/>
+  <circle cx="107" cy="113" r="2.4" fill="#FFFFFF"/>
+
+  <path d="M141 113C149 101 161 99 171 106" stroke="#1A1A1A" stroke-width="6" stroke-linecap="round"/>
+  <path d="M145 115C152 111 160 110 168 112" stroke="#E56A4A" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M121 151C125 146 132 144 139 145C143 146 147 148 150 151" stroke="#E08B79" stroke-width="5" stroke-linecap="round"/>
+  <path d="M126 150C127 156 131 160 136 162" stroke="#E08B79" stroke-width="4" stroke-linecap="round"/>
+
+  <path d="M56 161C67 154 75 151 83 149" stroke="#222328" stroke-width="18" stroke-linecap="round"/>
+  <path d="M200 161C189 154 181 151 173 149" stroke="#222328" stroke-width="18" stroke-linecap="round"/>
+  <path d="M86 170C95 182 100 194 102 210H79C78 194 80 182 86 170Z" fill="#3A3B43"/>
+  <path d="M170 170C161 182 156 194 154 210H177C178 194 176 182 170 170Z" fill="#3A3B43"/>
+
+  <text x="128" y="241" text-anchor="middle" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="#FFFFFF">miHoYo</text>
+</svg>

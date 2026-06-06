@@ -1,0 +1,121 @@
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { PartiesService } from '../parties/parties.service';
+import { BlockDto, ReportDto } from './safety.dto';
+
+@Injectable()
+export class SafetyService {
+  constructor(
+    private prisma: PrismaService,
+    private parties: PartiesService,
+  ) {}
+
+  async report(reporterId: string, dto: ReportDto) {
+    if (reporterId === dto.reportedId) {
+      throw new BadRequestException('不能举报自己');
+    }
+
+    const reason = dto.reason?.trim();
+    if (!reason) {
+      throw new BadRequestException('请填写举报原因');
+    }
+
+    return this.prisma.report.create({
+      data: {
+        reporterId,
+        reportedId: dto.reportedId,
+        reason,
+        detail: dto.detail?.trim() || undefined,
+      },
+    });
+  }
+
+  async block(blockerId: string, dto: BlockDto) {
+    if (blockerId === dto.blockedId) {
+      throw new BadRequestException('不能拉黑自己');
+    }
+
+    const blockedUser = await this.prisma.user.findUnique({
+      where: { id: dto.blockedId },
+      select: { id: true },
+    });
+    if (!blockedUser) {
+      throw new NotFoundException('用户不存在');
+    }
+
+    const block = await this.prisma.block.upsert({
+      where: {
+        blockerId_blockedId: {
+          blockerId,
+          blockedId: dto.blockedId,
+        },
+      },
+      create: { blockerId, blockedId: dto.blockedId },
+      update: {},
+    });
+
+    await this.prisma.$transaction([
+      this.prisma.friendship.deleteMany({
+        where: {
+          OR: [
+            { userId: blockerId, friendId: dto.blockedId },
+            { userId: dto.blockedId, friendId: blockerId },
+          ],
+        },
+      }),
+      this.prisma.friendRequest.deleteMany({
+        where: {
+          OR: [
+            { senderId: blockerId, receiverId: dto.blockedId },
+            { senderId: dto.blockedId, receiverId: blockerId },
+          ],
+        },
+      }),
+      this.prisma.invite.deleteMany({
+        where: {
+          status: 'pending',
+          OR: [
+            { senderId: blockerId, receiverId: dto.blockedId },
+            { senderId: dto.blockedId, receiverId: blockerId },
+          ],
+        },
+      }),
+      this.prisma.lfgApplicantCooldown.deleteMany({
+        where: {
+          OR: [
+            { authorId: blockerId, applicantId: dto.blockedId },
+            { authorId: dto.blockedId, applicantId: blockerId },
+          ],
+        },
+      }),
+    ]);
+
+    await this.parties.removeUserFromSharedParties(
+      blockerId,
+      dto.blockedId,
+      '由于你与对方存在拉黑关系，已被移出聊天室',
+    );
+
+    return block;
+  }
+
+  async listBlocks(userId: string) {
+    return this.prisma.block.findMany({
+      where: { blockerId: userId },
+      include: {
+        blocked: { select: { id: true, nickname: true } },
+      },
+    });
+  }
+
+  async unblock(blockerId: string, blockedId: string) {
+    await this.prisma.block.deleteMany({
+      where: { blockerId, blockedId },
+    });
+    return { ok: true };
+  }
+}

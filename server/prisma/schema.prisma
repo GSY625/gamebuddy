@@ -1,0 +1,347 @@
+generator client {
+  provider = "prisma-client-js"
+  // 生成到 server 目录内，避免根 node_modules 在 Windows 上被 OneDrive/杀毒锁定
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  nickname     String
+  avatarUrl    String?  @map("avatar_url")
+  bio          String?
+  isVip        Boolean  @default(false) @map("is_vip")
+  isBanned     Boolean  @default(false) @map("is_banned")
+  emailVerified Boolean @default(false) @map("email_verified")
+  nicknameChangedAt DateTime? @map("nickname_changed_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  gameProfiles   UserGameProfile[]
+  lfgPosts       LfgPost[]
+  lfgApplications LfgApplication[]
+  sentInvites    Invite[] @relation("InviteSender")
+  receivedInvites Invite[] @relation("InviteReceiver")
+  partyMembers   PartyMember[]
+  chatMessages   ChatMessage[]
+  reportsFiled   Report[] @relation("Reporter")
+  reportsAgainst Report[] @relation("Reported")
+  blocksInitiated Block[] @relation("Blocker")
+  blocksReceived  Block[] @relation("Blocked")
+  sentFriendRequests     FriendRequest[] @relation("FriendRequestSender")
+  receivedFriendRequests FriendRequest[] @relation("FriendRequestReceiver")
+  friendshipsAsUser      Friendship[] @relation("FriendshipUser")
+  friendshipsAsFriend    Friendship[] @relation("FriendshipFriend")
+  notifications          Notification[]
+  roomReadStates         RoomReadState[]
+  directMessageThreadsA  DirectMessageThread[] @relation("DirectMessageThreadUserA")
+  directMessageThreadsB  DirectMessageThread[] @relation("DirectMessageThreadUserB")
+  directMessagesSent     DirectMessage[] @relation("DirectMessageSender")
+  directMessageReadStates DirectMessageReadState[]
+  lfgCooldownsAsAuthor    LfgApplicantCooldown[] @relation("LfgCooldownAuthor")
+  lfgCooldownsAsApplicant LfgApplicantCooldown[] @relation("LfgCooldownApplicant")
+
+  @@map("users")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  type      String
+  title     String
+  message   String
+  link      String?
+  refId     String?  @map("ref_id")
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read, createdAt])
+  @@map("notifications")
+}
+
+model Game {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  name      String
+  icon      String?
+  platform  String   @default("pc")
+  tags      String   @default("[]")
+  enabled   Boolean  @default(true)
+  schema    String   @map("field_schema")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  profiles UserGameProfile[]
+  lfgPosts LfgPost[]
+
+  @@map("games")
+}
+
+model UserGameProfile {
+  id                String   @id @default(uuid())
+  userId            String   @map("user_id")
+  gameId            String   @map("game_id")
+  name              String   @default("未命名方案")
+  fieldValues       String   @map("field_values")
+  publishedToSquare Boolean  @default(false) @map("published_to_square")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([userId, gameId])
+  @@map("user_game_profiles")
+}
+
+model LfgPost {
+  id          String   @id @default(uuid())
+  authorId    String   @map("author_id")
+  gameId      String   @map("game_id")
+  title       String
+  description String?
+  mode        String?
+  expiresAt   DateTime? @map("expires_at")
+  status      String   @default("open")
+  weight      Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  author       User              @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  game         Game              @relation(fields: [gameId], references: [id])
+  applications LfgApplication[]
+
+  @@map("lfg_posts")
+}
+
+model LfgApplication {
+  id        String   @id @default(uuid())
+  postId    String   @map("post_id")
+  userId    String   @map("user_id")
+  message   String?
+  status    String   @default("pending")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  post LfgPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@map("lfg_applications")
+}
+
+model LfgApplicantCooldown {
+  id          String   @id @default(uuid())
+  authorId    String   @map("author_id")
+  applicantId String   @map("applicant_id")
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  author    User @relation("LfgCooldownAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  applicant User @relation("LfgCooldownApplicant", fields: [applicantId], references: [id], onDelete: Cascade)
+
+  @@unique([authorId, applicantId])
+  @@map("lfg_applicant_cooldowns")
+}
+
+model Invite {
+  id         String   @id @default(uuid())
+  senderId   String   @map("sender_id")
+  receiverId String   @map("receiver_id")
+  gameId     String?  @map("game_id")
+  partyId    String?  @map("party_id")
+  message    String?
+  status     String   @default("pending")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  sender   User  @relation("InviteSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User  @relation("InviteReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  party    Party? @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  @@map("invites")
+}
+
+model Party {
+  id        String   @id @default(uuid())
+  status    String   @default("active")
+  gameId    String?  @map("game_id")
+  voiceHint String?  @map("voice_hint")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  members  PartyMember[]
+  chatRoom ChatRoom?
+  invites  Invite[]
+
+  @@map("parties")
+}
+
+model PartyMember {
+  id       String   @id @default(uuid())
+  partyId  String   @map("party_id")
+  userId   String   @map("user_id")
+  role     String   @default("member")
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  party Party @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([partyId, userId])
+  @@map("party_members")
+}
+
+model ChatRoom {
+  id          String    @id @default(uuid())
+  partyId     String    @unique @map("party_id")
+  roomCode    String?   @unique @map("room_code")
+  name        String?
+  status      String    @default("active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  dissolvedAt DateTime? @map("dissolved_at")
+
+  party        Party           @relation(fields: [partyId], references: [id], onDelete: Cascade)
+  messages     ChatMessage[]
+  readStates   RoomReadState[]
+
+  @@map("chat_rooms")
+}
+
+model RoomReadState {
+  userId     String   @map("user_id")
+  roomId     String   @map("room_id")
+  lastReadAt DateTime @map("last_read_at")
+
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roomId])
+  @@map("room_read_states")
+}
+
+model FriendRequest {
+  id         String   @id @default(uuid())
+  senderId   String   @map("sender_id")
+  receiverId String   @map("receiver_id")
+  status     String   @default("pending")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  sender   User @relation("FriendRequestSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("FriendRequestReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, receiverId])
+  @@map("friend_requests")
+}
+
+model Friendship {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  friendId  String   @map("friend_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User @relation("FriendshipUser", fields: [userId], references: [id], onDelete: Cascade)
+  friend User @relation("FriendshipFriend", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, friendId])
+  @@map("friendships")
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  roomId    String   @map("room_id")
+  userId    String?  @map("user_id")
+  type      String   @default("text")
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  room ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("chat_messages")
+}
+
+model DirectMessageThread {
+  id            String   @id @default(uuid())
+  userAId       String   @map("user_a_id")
+  userBId       String   @map("user_b_id")
+  lastMessageAt DateTime @default(now()) @map("last_message_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  userA      User                     @relation("DirectMessageThreadUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB      User                     @relation("DirectMessageThreadUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  messages   DirectMessage[]
+  readStates DirectMessageReadState[]
+
+  @@unique([userAId, userBId])
+  @@index([userAId, lastMessageAt])
+  @@index([userBId, lastMessageAt])
+  @@map("direct_message_threads")
+}
+
+model DirectMessage {
+  id        String   @id @default(uuid())
+  threadId  String   @map("thread_id")
+  senderId  String   @map("sender_id")
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  thread DirectMessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender User                @relation("DirectMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@map("direct_messages")
+}
+
+model DirectMessageReadState {
+  threadId   String   @map("thread_id")
+  userId     String   @map("user_id")
+  lastReadAt DateTime @map("last_read_at")
+
+  thread DirectMessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user   User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([threadId, userId])
+  @@map("direct_message_read_states")
+}
+
+model Report {
+  id           String   @id @default(uuid())
+  reporterId   String   @map("reporter_id")
+  reportedId   String   @map("reported_id")
+  reason       String
+  detail       String?
+  status       String   @default("pending")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  reporter User @relation("Reporter", fields: [reporterId], references: [id])
+  reported User @relation("Reported", fields: [reportedId], references: [id])
+
+  @@map("reports")
+}
+
+model Block {
+  id        String   @id @default(uuid())
+  blockerId String   @map("blocker_id")
+  blockedId String   @map("blocked_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@map("blocks")
+}
+
+model EmailVerification {
+  id        String   @id @default(uuid())
+  email     String
+  code      String
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("email_verifications")
+}
