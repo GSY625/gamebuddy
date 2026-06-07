@@ -14,6 +14,7 @@ model User {
   email        String   @unique
   passwordHash String   @map("password_hash")
   nickname     String
+  role         String   @default("user")
   avatarUrl    String?  @map("avatar_url")
   bio          String?
   isVip        Boolean  @default(false) @map("is_vip")
@@ -32,6 +33,7 @@ model User {
   chatMessages   ChatMessage[]
   reportsFiled   Report[] @relation("Reporter")
   reportsAgainst Report[] @relation("Reported")
+  reviewedReports Report[] @relation("ReportReviewer")
   blocksInitiated Block[] @relation("Blocker")
   blocksReceived  Block[] @relation("Blocked")
   sentFriendRequests     FriendRequest[] @relation("FriendRequestSender")
@@ -40,6 +42,8 @@ model User {
   friendshipsAsFriend    Friendship[] @relation("FriendshipFriend")
   notifications          Notification[]
   roomReadStates         RoomReadState[]
+  adminActionLogs        AdminActionLog[]
+  restrictions           UserRestriction[]
   directMessageThreadsA  DirectMessageThread[] @relation("DirectMessageThreadUserA")
   directMessageThreadsB  DirectMessageThread[] @relation("DirectMessageThreadUserB")
   directMessagesSent     DirectMessage[] @relation("DirectMessageSender")
@@ -171,6 +175,7 @@ model Party {
   status    String   @default("active")
   gameId    String?  @map("game_id")
   voiceHint String?  @map("voice_hint")
+  maxMembers Int?    @map("max_members")
   createdAt DateTime @default(now()) @map("created_at")
 
   members  PartyMember[]
@@ -312,15 +317,55 @@ model Report {
   id           String   @id @default(uuid())
   reporterId   String   @map("reporter_id")
   reportedId   String   @map("reported_id")
+  targetType   String?  @map("target_type")
+  targetId     String?  @map("target_id")
   reason       String
   detail       String?
+  reviewStatus String   @default("pending") @map("review_status")
+  reviewedBy   String?  @map("reviewed_by")
+  reviewedAt   DateTime? @map("reviewed_at")
+  reviewNote   String?  @map("review_note")
+  actionTaken  String?  @map("action_taken")
   status       String   @default("pending")
   createdAt    DateTime @default(now()) @map("created_at")
 
   reporter User @relation("Reporter", fields: [reporterId], references: [id])
   reported User @relation("Reported", fields: [reportedId], references: [id])
+  reviewer User? @relation("ReportReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
 
   @@map("reports")
+}
+
+model AdminActionLog {
+  id         String   @id @default(uuid())
+  actorId    String   @map("actor_id")
+  action     String
+  targetType String   @map("target_type")
+  targetId   String?  @map("target_id")
+  note       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor User @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@map("admin_action_logs")
+}
+
+model UserRestriction {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  type      String
+  active    Boolean  @default(true)
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId, active])
+  @@map("user_restrictions")
 }
 
 model Block {

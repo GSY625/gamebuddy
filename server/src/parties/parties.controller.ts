@@ -10,7 +10,10 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PartiesService } from './parties.service';
-import { CreatePartyDto } from './parties.dto';
+import {
+  CreatePartyDto,
+  UpdatePartyMemberLimitDto,
+} from './parties.dto';
 
 @Controller('parties')
 @UseGuards(JwtAuthGuard)
@@ -51,6 +54,19 @@ export class PartiesController {
     @Body('voiceHint') voiceHint: string,
   ) {
     return this.parties.updateVoiceHint(id, req.user.id, voiceHint);
+  }
+
+  @Patch(':id/member-limit')
+  memberLimit(
+    @Req() req: { user: { id: string } },
+    @Param('id') id: string,
+    @Body() dto: UpdatePartyMemberLimitDto,
+  ) {
+    return this.parties.updateMemberLimit(
+      id,
+      req.user.id,
+      dto.maxMembers ?? null,
+    );
   }
 
   @Post(':id/leave')

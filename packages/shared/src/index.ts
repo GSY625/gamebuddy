@@ -734,6 +734,18 @@ export const MVP_GAMES_SEED = [
     }),
   },
   {
+    slug: 'deltaforce-mobile',
+    name: '三角洲行动（手游）',
+    icon: '/icons/deltaforce.png',
+    platform: 'mobile' as GamePlatform,
+    tags: ['战术射击', '夺金', '组队'],
+    schema: buildGenericGameSchema({
+      modeOptions: ['烽火地带', '全面战场', '排位'],
+      roleOptions: ['突击', '支援', '侦察', '工程'],
+      bioPlaceholder: '主玩模式、资源节奏、是否愿意指挥等',
+    }),
+  },
+  {
     slug: 'hearthstone',
     name: '炉石传说',
     icon: '/icons/hearthstone.png',

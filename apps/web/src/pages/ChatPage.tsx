@@ -66,7 +66,7 @@ function patchMemberPresence(
 
 type RoomMeta = {
   room: { id: string; roomCode: string | null; name: string | null };
-  party: { id: string };
+  party: { id: string; maxMembers?: number | null };
   members: Member[];
   leaderId: string | null;
   isLeader: boolean;
@@ -81,6 +81,7 @@ export default function ChatPage() {
   const [text, setText] = useState('');
   const [voiceHint, setVoiceHint] = useState('');
   const [roomNameEdit, setRoomNameEdit] = useState('');
+  const [memberLimitEdit, setMemberLimitEdit] = useState('');
   const [loading, setLoading] = useState(true);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [confirmDissolve, setConfirmDissolve] = useState(false);
@@ -120,7 +121,10 @@ export default function ChatPage() {
     const data = (await api.getRoomMeta(roomId)) as RoomMeta;
     setMeta(data);
     setRoomNameEdit(data.room.name ?? '');
-    const party = (await api.getParty(data.party.id)) as { voiceHint?: string };
+    setMemberLimitEdit(
+      typeof data.party.maxMembers === 'number' ? String(data.party.maxMembers) : '',
+    );
+    const party = await api.getParty(data.party.id);
     setVoiceHint(party.voiceHint ?? '');
 
     const statuses: Record<string, { status: string; requestId?: string }> = {};
@@ -260,6 +264,39 @@ export default function ChatPage() {
     }
   };
 
+  const saveMemberLimit = async () => {
+    if (!meta?.isLeader) return;
+    const trimmed = memberLimitEdit.trim();
+
+    if (!trimmed) {
+      try {
+        await api.setPartyMemberLimit(meta.party.id, null);
+        await loadMeta();
+        setNotifyToast({ title: '已保存', message: '已取消人数上限' });
+      } catch (err) {
+        setAlert({ message: err instanceof Error ? err.message : '保存失败' });
+      }
+      return;
+    }
+
+    const maxMembers = Number(trimmed);
+    if (!Number.isInteger(maxMembers) || maxMembers < 2 || maxMembers > 99) {
+      setAlert({ message: '人数上限需为 2 到 99 的整数，留空表示不限制' });
+      return;
+    }
+
+    try {
+      await api.setPartyMemberLimit(meta.party.id, maxMembers);
+      await loadMeta();
+      setNotifyToast({
+        title: '已保存',
+        message: `聊天室人数上限已更新为 ${maxMembers} 人`,
+      });
+    } catch (err) {
+      setAlert({ message: err instanceof Error ? err.message : '保存失败' });
+    }
+  };
+
   const doLeave = async () => {
     if (!meta) return;
     setActionLoading(true);
@@ -329,6 +366,14 @@ export default function ChatPage() {
   };
 
   const openInviteModal = () => {
+    if (
+      meta &&
+      typeof meta.party.maxMembers === 'number' &&
+      meta.members.length >= meta.party.maxMembers
+    ) {
+      setAlert({ message: '该聊天室已满' });
+      return;
+    }
     setInviteOpen(true);
     setFriendsLoading(true);
     void api
@@ -367,6 +412,9 @@ export default function ChatPage() {
 
   const memberIds = new Set(meta?.members.map((m) => m.userId) ?? []);
   const invitableFriends = friends.filter((f) => !memberIds.has(f.friend.id));
+  const isPartyFull =
+    typeof meta?.party.maxMembers === 'number' &&
+    meta.members.length >= meta.party.maxMembers;
 
   if (loading) return <div className="loading page-wrap">加载聊天室中...</div>;
 
@@ -480,6 +528,37 @@ export default function ChatPage() {
           )}
         </div>
 
+        <div className="form-field">
+          <span className="form-field-label">人数上限</span>
+          {meta.isLeader ? (
+            <>
+              <p className="muted small">留空表示不限制，范围 2 - 99 人</p>
+              <input
+                type="number"
+                min={2}
+                max={99}
+                step={1}
+                placeholder="不限制"
+                value={memberLimitEdit}
+                onChange={(e) => setMemberLimitEdit(e.target.value)}
+              />
+              <button
+                type="button"
+                className="ghost small-btn"
+                onClick={() => void saveMemberLimit()}
+              >
+                保存上限
+              </button>
+            </>
+          ) : (
+            <p className="room-name-display">
+              {typeof meta.party.maxMembers === 'number'
+                ? `当前上限 ${meta.party.maxMembers} 人`
+                : '当前未限制人数'}
+            </p>
+          )}
+        </div>
+
         <hr className="chat-divider" />
 
         <h3>语音（第三方）</h3>
@@ -588,8 +667,19 @@ export default function ChatPage() {
 
       <aside className="chat-members glass-panel">
         <div className="chat-members-header">
-          <h2>成员 ({meta.members.length})</h2>
-          <button type="button" className="ghost small-btn" onClick={openInviteModal}>
+          <h2>
+            成员 ({meta.members.length}
+            {typeof meta.party.maxMembers === 'number'
+              ? `/${meta.party.maxMembers}`
+              : ''}
+            )
+          </h2>
+          <button
+            type="button"
+            className="ghost small-btn"
+            disabled={isPartyFull}
+            onClick={openInviteModal}
+          >
             邀请好友
           </button>
         </div>
@@ -699,6 +789,11 @@ export default function ChatPage() {
         <p className="muted small">
           好友接受邀请后，仍需房主同意，才会正式加入聊天室。
         </p>
+        {typeof meta.party.maxMembers === 'number' && (
+          <p className="muted small">
+            当前人数 {meta.members.length}/{meta.party.maxMembers}
+          </p>
+        )}
         {friendsLoading ? (
           <p className="muted">加载好友列表中...</p>
         ) : invitableFriends.length === 0 ? (

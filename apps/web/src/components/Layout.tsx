@@ -98,6 +98,9 @@ export function Layout() {
             <Link to="/parties">我的队伍</Link>
             <Link to="/friends">好友</Link>
             <Link to="/messages">私信</Link>
+            {(user?.role === 'admin' || user?.role === 'superAdmin') && (
+              <Link to="/admin">后台</Link>
+            )}
             <button
               type="button"
               className="nav-guide-btn"

@@ -32,6 +32,7 @@ export class UsersService {
     id: string;
     email: string;
     nickname: string;
+    role: string;
     avatarUrl: string | null;
     bio: string | null;
     isVip: boolean;
@@ -41,6 +42,7 @@ export class UsersService {
       id: user.id,
       email: user.email,
       nickname: user.nickname,
+      role: user.role,
       avatarUrl: user.avatarUrl,
       bio: user.bio,
       isVip: user.isVip,
@@ -182,6 +184,7 @@ export class UsersService {
     return {
       id: user.id,
       nickname: user.nickname,
+      role: user.role,
       avatarUrl: user.avatarUrl,
       bio: user.bio,
       isVip: user.isVip,

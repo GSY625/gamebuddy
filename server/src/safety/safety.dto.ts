@@ -10,6 +10,14 @@ export class ReportDto {
   @IsOptional()
   @IsString()
   detail?: string;
+
+  @IsOptional()
+  @IsString()
+  targetType?: string;
+
+  @IsOptional()
+  @IsString()
+  targetId?: string;
 }
 
 export class BlockDto {

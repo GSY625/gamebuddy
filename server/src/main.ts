@@ -4,9 +4,22 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
+import { AppLoggerService } from './logging/app-logger.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
+  const logger = app.get(AppLoggerService);
+  app.useLogger(logger);
+
+  process.on('unhandledRejection', (reason) => {
+    logger.error('process.unhandled_rejection', {}, reason);
+  });
+  process.on('uncaughtException', (error) => {
+    logger.error('process.uncaught_exception', {}, error);
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true }),
   );
@@ -18,6 +31,6 @@ async function bootstrap() {
   app.useStaticAssets(join(process.cwd(), uploadDir), { prefix: '/uploads/' });
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
-  console.log(`GameBuddy API http://localhost:${port}`);
+  logger.log('app.started', { port });
 }
 bootstrap();

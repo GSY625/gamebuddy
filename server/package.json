@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only -r reflect-metadata src/main.ts",
-    "build": "tsc",
-    "start": "node dist/main.js",
+    "build": "tsc && node scripts/sync-generated-prisma.cjs",
+    "start": "node scripts/sync-generated-prisma.cjs && node dist/main.js",
     "db:migrate": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:seed": "ts-node prisma/seed.ts",

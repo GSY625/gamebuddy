@@ -17,6 +17,11 @@ import UserProfilePage from './pages/UserProfilePage';
 import NotificationsPage from './pages/NotificationsPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import DirectMessagesPage from './pages/DirectMessagesPage';
+import AdminDashboardPage from './pages/AdminDashboardPage';
+import AdminReportsPage from './pages/AdminReportsPage';
+import AdminReportDetailPage from './pages/AdminReportDetailPage';
+import AdminUsersPage from './pages/AdminUsersPage';
+import AdminUserDetailPage from './pages/AdminUserDetailPage';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -28,6 +33,21 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="app-bg">
+        <div className="loading">加载中...</div>
+      </div>
+    );
+  }
+  if (user?.role !== 'admin' && user?.role !== 'superAdmin') {
+    return <Navigate to="/" replace />;
+  }
   return <>{children}</>;
 }
 
@@ -59,6 +79,46 @@ export default function App() {
         <Route path="messages/:friendId" element={<DirectMessagesPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="users/:userId" element={<UserProfilePage />} />
+        <Route
+          path="admin"
+          element={
+            <AdminRoute>
+              <AdminDashboardPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="admin/reports"
+          element={
+            <AdminRoute>
+              <AdminReportsPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="admin/reports/:reportId"
+          element={
+            <AdminRoute>
+              <AdminReportDetailPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="admin/users"
+          element={
+            <AdminRoute>
+              <AdminUsersPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="admin/users/:userId"
+          element={
+            <AdminRoute>
+              <AdminUserDetailPage />
+            </AdminRoute>
+          }
+        />
       </Route>
     </Routes>
   );

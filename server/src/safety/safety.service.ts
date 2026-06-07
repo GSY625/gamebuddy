@@ -6,12 +6,14 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { PartiesService } from '../parties/parties.service';
 import { BlockDto, ReportDto } from './safety.dto';
+import { BusinessLogService } from '../logging/business-log.service';
 
 @Injectable()
 export class SafetyService {
   constructor(
     private prisma: PrismaService,
     private parties: PartiesService,
+    private businessLog: BusinessLogService,
   ) {}
 
   async report(reporterId: string, dto: ReportDto) {
@@ -21,17 +23,29 @@ export class SafetyService {
 
     const reason = dto.reason?.trim();
     if (!reason) {
-      throw new BadRequestException('请填写举报原因');
+      throw new BadRequestException('请输入举报原因');
     }
 
-    return this.prisma.report.create({
+    const report = await this.prisma.report.create({
       data: {
         reporterId,
         reportedId: dto.reportedId,
+        targetType: dto.targetType?.trim() || 'user',
+        targetId: dto.targetId?.trim() || dto.reportedId,
         reason,
         detail: dto.detail?.trim() || undefined,
       },
     });
+
+    this.businessLog.log('safety.report.created', {
+      reportId: report.id,
+      reporterId,
+      reportedId: dto.reportedId,
+      targetType: report.targetType,
+      targetId: report.targetId,
+    });
+
+    return report;
   }
 
   async block(blockerId: string, dto: BlockDto) {
@@ -97,8 +111,14 @@ export class SafetyService {
     await this.parties.removeUserFromSharedParties(
       blockerId,
       dto.blockedId,
-      '由于你与对方存在拉黑关系，已被移出聊天室',
+      '由于拉黑关系，你已被移出聊天室',
     );
+
+    this.businessLog.log('safety.block.created', {
+      blockId: block.id,
+      blockerId,
+      blockedId: dto.blockedId,
+    });
 
     return block;
   }
@@ -115,6 +135,10 @@ export class SafetyService {
   async unblock(blockerId: string, blockedId: string) {
     await this.prisma.block.deleteMany({
       where: { blockerId, blockedId },
+    });
+    this.businessLog.log('safety.block.removed', {
+      blockerId,
+      blockedId,
     });
     return { ok: true };
   }

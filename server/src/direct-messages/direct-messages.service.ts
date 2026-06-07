@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { filterSensitive } from '../common/sensitive-filter';
+import { RestrictionsService } from '../restrictions/restrictions.service';
 
 type ThreadWithUsers = {
   id: string;
@@ -23,6 +24,7 @@ export class DirectMessagesService {
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
+    private restrictions: RestrictionsService,
   ) {}
 
   private pairIds(a: string, b: string): [string, string] {
@@ -220,6 +222,7 @@ export class DirectMessagesService {
   }
 
   async sendMessage(senderId: string, receiverId: string, content: string) {
+    await this.restrictions.assertAllowed(senderId, 'direct_message');
     const friend = await this.assertFriendship(senderId, receiverId);
     const filtered = filterSensitive(content.trim());
     if (!filtered) {

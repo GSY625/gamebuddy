@@ -9,6 +9,7 @@ import { PartiesService } from '../parties/parties.service';
 import { CreateInviteDto } from './invites.dto';
 import { VisibilityService } from '../visibility/visibility.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RestrictionsService } from '../restrictions/restrictions.service';
 
 type InviteWithRelations = Awaited<ReturnType<InvitesService['getInviteById']>>;
 
@@ -19,6 +20,7 @@ export class InvitesService {
     private parties: PartiesService,
     private visibility: VisibilityService,
     private notifications: NotificationsService,
+    private restrictions: RestrictionsService,
   ) {}
 
   private async areFriends(a: string, b: string) {
@@ -109,6 +111,7 @@ export class InvitesService {
     dto: CreateInviteDto,
   ) {
     await this.visibility.assertOnline(senderId);
+    await this.restrictions.assertAllowed(senderId, 'invite');
     if (senderId === dto.receiverId) {
       throw new BadRequestException('不能邀请自己');
     }
@@ -151,6 +154,7 @@ export class InvitesService {
     if (party.members.some((member) => member.userId === dto.receiverId)) {
       throw new BadRequestException('对方已经在聊天室里了');
     }
+    this.parties.assertPartyHasCapacity(party);
 
     const pendingRoomInvite = await this.prisma.invite.findFirst({
       where: {
@@ -195,6 +199,7 @@ export class InvitesService {
 
   private async createTeamInvite(senderId: string, dto: CreateInviteDto) {
     await this.visibility.assertOnline(senderId);
+    await this.restrictions.assertAllowed(senderId, 'invite');
     if (senderId === dto.receiverId) {
       throw new BadRequestException('不能邀请自己');
     }
@@ -370,6 +375,7 @@ export class InvitesService {
         if (!invite.party.chatRoom || invite.party.chatRoom.status !== 'active') {
           throw new NotFoundException('聊天室不存在或已注销');
         }
+        this.parties.assertPartyHasCapacity(invite.party);
 
         await this.prisma.invite.update({
           where: { id: invite.id },

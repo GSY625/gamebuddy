@@ -10,6 +10,7 @@ import { ThemeSelect } from '../components/ThemeSelect';
 import { ThemeToast } from '../components/ThemeToast';
 import { useAuth } from '../context/AuthContext';
 import { useOnlineGuard } from '../hooks/useOnlineGuard';
+import { usePlayerSafety } from '../hooks/usePlayerSafety';
 
 type Game = { id: string; name: string };
 type Post = {
@@ -58,6 +59,7 @@ function postStatusLabel(status: string) {
 export default function LfgPage() {
   const { user } = useAuth();
   const { guard } = useOnlineGuard();
+  const safety = usePlayerSafety();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState<LfgTab>('posts');
   const [pendingManagePostId, setPendingManagePostId] = useState<string | null>(null);
@@ -297,6 +299,7 @@ export default function LfgPage() {
 
   return (
     <div className="page-wrap">
+      {safety.modals}
       <ThemeToast message={toast} show={Boolean(toast)} onClose={() => setToast('')} />
       <ThemeConfirmModal
         open={pendingDelete !== null}
@@ -446,6 +449,23 @@ export default function LfgPage() {
                             申请组队
                           </button>
                         ))}
+                      {!isOwn && (
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() =>
+                            safety.openReport(p.author.id, p.author.nickname, {
+                              targetType: 'lfg_post',
+                              targetId: p.id,
+                              detail: `招募贴标题：${p.title}${p.description ? `；内容：${p.description}` : ''}`,
+                              modalTitle: '举报招募贴',
+                              hint: '这条举报会直接关联当前招募内容，管理员可以查看并下架。',
+                            })
+                          }
+                        >
+                          举报
+                        </button>
+                      )}
                       {isOwn && (
                         <>
                           <button type="button" className="ghost" onClick={() => openEdit(p)}>

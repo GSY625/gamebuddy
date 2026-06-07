@@ -21,6 +21,7 @@ export type User = {
   id: string;
   email: string;
   nickname: string;
+  role?: 'user' | 'admin' | 'superAdmin';
   avatarUrl?: string | null;
   bio?: string | null;
   visibilityStatus?: VisibilityStatus;

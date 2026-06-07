@@ -244,7 +244,14 @@ export const api = {
       { method: 'POST', body: JSON.stringify(body ?? {}) },
     ),
   listParties: () => request('/parties'),
-  getParty: (id: string) => request(`/parties/${id}`),
+  getParty: (id: string) =>
+    request<{
+      id: string;
+      voiceHint?: string | null;
+      maxMembers?: number | null;
+      members: Array<{ userId: string; role: string }>;
+      chatRoom?: { id: string; roomCode?: string | null; name?: string | null };
+    }>(`/parties/${id}`),
   setVoiceHint: (id: string, voiceHint: string) =>
     request(`/parties/${id}/voice-hint`, {
       method: 'PATCH',
@@ -255,11 +262,34 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ name }),
     }),
+  setPartyMemberLimit: (partyId: string, maxMembers: number | null) =>
+    request(`/parties/${partyId}/member-limit`, {
+      method: 'PATCH',
+      body: JSON.stringify({ maxMembers }),
+    }),
   leaveParty: (partyId: string) =>
     request(`/parties/${partyId}/leave`, { method: 'POST' }),
   dissolveParty: (partyId: string) =>
     request(`/parties/${partyId}/dissolve`, { method: 'POST' }),
-  getRoomMeta: (roomId: string) => request(`/rooms/${roomId}/meta`),
+  getRoomMeta: (roomId: string) =>
+    request<{
+      room: { id: string; roomCode: string | null; name: string | null };
+      party: {
+        id: string;
+        gameId?: string | null;
+        status?: string;
+        maxMembers?: number | null;
+      };
+      members: Array<{
+        userId: string;
+        role: string;
+        isLeader: boolean;
+        presenceStatus?: 'online' | 'invisible' | 'offline';
+        user: { id: string; nickname: string; avatarUrl?: string | null };
+      }>;
+      leaderId: string | null;
+      isLeader: boolean;
+    }>(`/rooms/${roomId}/meta`),
   getMessages: (roomId: string, cursor?: string) =>
     request(`/rooms/${roomId}/messages${cursor ? `?cursor=${cursor}` : ''}`),
   searchUsers: (q: string) =>
@@ -355,7 +385,208 @@ export const api = {
     >(`/direct-messages/with/${friendId}/messages${cursor ? `?cursor=${cursor}` : ''}`),
   markDirectConversationRead: (friendId: string) =>
     request(`/direct-messages/with/${friendId}/read`, { method: 'POST' }),
-  report: (body: { reportedId: string; reason: string; detail?: string }) =>
+  adminOverview: () =>
+    request<{
+      metrics: {
+        pendingReports: number;
+        totalReports: number;
+        reviewedToday: number;
+        bannedUsers: number;
+        adminUsers: number;
+        activeRestrictions: number;
+      };
+      recentActions: Array<{
+        id: string;
+        action: string;
+        targetType: string;
+        targetId?: string | null;
+        note?: string | null;
+        createdAt: string;
+        actor: { id: string; nickname: string; role: string };
+      }>;
+    }>('/admin/overview'),
+  adminListReports: (status?: string) =>
+    request<
+      Array<{
+        id: string;
+        reason: string;
+        detail?: string | null;
+        targetType?: string | null;
+        targetId?: string | null;
+        reviewStatus: string;
+        actionTaken?: string | null;
+        createdAt: string;
+        reviewedAt?: string | null;
+        reporter: { id: string; nickname: string; email: string };
+        reported: {
+          id: string;
+          nickname: string;
+          email: string;
+          role: string;
+          isBanned: boolean;
+        };
+        reviewer?: { id: string; nickname: string; role: string } | null;
+      }>
+    >(`/admin/reports${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  adminGetReport: (id: string) =>
+    request<{
+      id: string;
+      reason: string;
+      detail?: string | null;
+      targetType?: string | null;
+      targetId?: string | null;
+      reviewStatus: string;
+      actionTaken?: string | null;
+      reviewNote?: string | null;
+      createdAt: string;
+      reviewedAt?: string | null;
+      reporter: { id: string; nickname: string; email: string };
+      reported: {
+        id: string;
+        nickname: string;
+        email: string;
+        role: string;
+        isBanned: boolean;
+        createdAt: string;
+      };
+      reviewer?: { id: string; nickname: string; role: string } | null;
+      targetContext?: unknown;
+      recentReports: Array<{
+        id: string;
+        reason: string;
+        detail?: string | null;
+        reviewStatus: string;
+        createdAt: string;
+        reporter: { id: string; nickname: string };
+      }>;
+    }>(`/admin/reports/${id}`),
+  adminReviewReport: (
+    id: string,
+    body: {
+      reviewStatus: 'resolved' | 'rejected';
+      actionTaken?: 'none' | 'ban' | 'hide_lfg';
+      reviewNote?: string;
+    },
+  ) =>
+    request(`/admin/reports/${id}/review`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  adminListUsers: (params?: { q?: string; banned?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.q) q.set('q', params.q);
+    if (params?.banned) q.set('banned', params.banned);
+    const query = q.toString();
+    return request<
+      Array<{
+        id: string;
+        email: string;
+        nickname: string;
+        role: string;
+        avatarUrl?: string | null;
+        isVip: boolean;
+        isBanned: boolean;
+        createdAt: string;
+        _count: { reportsAgainst: number; reportsFiled: number };
+      }>
+    >(`/admin/users${query ? `?${query}` : ''}`);
+  },
+  adminGetUser: (id: string) =>
+    request<{
+      id: string;
+      email: string;
+      nickname: string;
+      role: string;
+      avatarUrl?: string | null;
+      bio?: string | null;
+      isVip: boolean;
+      isBanned: boolean;
+      createdAt: string;
+      _count: {
+        reportsAgainst: number;
+        reportsFiled: number;
+        friendshipsAsUser: number;
+        friendshipsAsFriend: number;
+      };
+      reportsAgainst: Array<{
+        id: string;
+        reason: string;
+        detail?: string | null;
+        reviewStatus: string;
+        createdAt: string;
+        reporter: { id: string; nickname: string };
+        reviewer?: { id: string; nickname: string } | null;
+      }>;
+      reportsFiled: Array<{
+        id: string;
+        reason: string;
+        detail?: string | null;
+        reviewStatus: string;
+        createdAt: string;
+        reported: { id: string; nickname: string };
+      }>;
+      actionLogs: Array<{
+        id: string;
+        action: string;
+        targetType: string;
+        targetId?: string | null;
+        note?: string | null;
+        createdAt: string;
+        actor: { id: string; nickname: string; role: string };
+      }>;
+      restrictions: Array<{
+        id: string;
+        type: 'invite' | 'direct_message' | 'lfg' | 'chat';
+        active: boolean;
+        note?: string | null;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+      lfgPosts: Array<{
+        id: string;
+        title: string;
+        description?: string | null;
+        status: string;
+        createdAt: string;
+        game: { id: string; name: string; icon: string };
+      }>;
+    }>(`/admin/users/${id}`),
+  adminSetUserBan: (id: string, body: { banned: boolean; note?: string }) =>
+    request(`/admin/users/${id}/ban`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  adminSetUserRestriction: (
+    id: string,
+    body: {
+      type: 'invite' | 'direct_message' | 'lfg' | 'chat';
+      enabled: boolean;
+      note?: string;
+    },
+  ) =>
+    request(`/admin/users/${id}/restrictions`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  adminActionLogs: (limit?: number) =>
+    request<
+      Array<{
+        id: string;
+        action: string;
+        targetType: string;
+        targetId?: string | null;
+        note?: string | null;
+        createdAt: string;
+        actor: { id: string; nickname: string; role: string };
+      }>
+    >(`/admin/action-logs${limit ? `?limit=${limit}` : ''}`),
+  report: (body: {
+    reportedId: string;
+    reason: string;
+    detail?: string;
+    targetType?: string;
+    targetId?: string;
+  }) =>
     request('/safety/reports', { method: 'POST', body: JSON.stringify(body) }),
   block: (blockedId: string) =>
     request('/safety/blocks', { method: 'POST', body: JSON.stringify({ blockedId }) }),

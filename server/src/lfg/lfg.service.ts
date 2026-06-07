@@ -9,6 +9,7 @@ import { PartiesService } from '../parties/parties.service';
 import { CreateLfgPostDto, ApplyLfgDto, UpdateLfgPostDto } from './lfg.dto';
 import { VisibilityService } from '../visibility/visibility.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RestrictionsService } from '../restrictions/restrictions.service';
 
 @Injectable()
 export class LfgService {
@@ -17,10 +18,12 @@ export class LfgService {
     private parties: PartiesService,
     private visibility: VisibilityService,
     private notifications: NotificationsService,
+    private restrictions: RestrictionsService,
   ) {}
 
   async create(authorId: string, dto: CreateLfgPostDto) {
     await this.visibility.assertOnline(authorId);
+    await this.restrictions.assertAllowed(authorId, 'lfg');
     return this.prisma.lfgPost.create({
       data: {
         authorId,
@@ -105,6 +108,7 @@ export class LfgService {
 
   async apply(postId: string, userId: string, dto: ApplyLfgDto) {
     await this.visibility.assertOnline(userId);
+    await this.restrictions.assertAllowed(userId, 'lfg');
     const post = await this.prisma.lfgPost.findUnique({
       where: { id: postId },
       include: { author: { select: { nickname: true } } },

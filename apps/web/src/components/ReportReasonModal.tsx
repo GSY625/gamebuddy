@@ -3,6 +3,8 @@ import { ThemeModal } from './ThemeModal';
 
 type Props = {
   open: boolean;
+  title?: string;
+  hint?: string;
   targetNickname?: string;
   submitting?: boolean;
   error?: string;
@@ -12,6 +14,8 @@ type Props = {
 
 export function ReportReasonModal({
   open,
+  title = '举报内容',
+  hint,
   targetNickname,
   submitting = false,
   error,
@@ -33,7 +37,7 @@ export function ReportReasonModal({
   return (
     <ThemeModal
       open={open}
-      title="举报用户"
+      title={title}
       onClose={onClose}
       footer={
         <>
@@ -46,7 +50,7 @@ export function ReportReasonModal({
             disabled={submitting || !reason.trim()}
             onClick={handleSubmit}
           >
-            {submitting ? '提交中…' : '提交举报'}
+            {submitting ? '提交中...' : '提交举报'}
           </button>
         </>
       }
@@ -56,15 +60,16 @@ export function ReportReasonModal({
           举报对象：<strong>{targetNickname}</strong>
         </p>
       )}
+      {hint && <p className="muted small theme-modal-hint">{hint}</p>}
       <div className="form-field theme-modal-field">
         <label className="form-field-label" htmlFor="report-reason">
-          举报原因：
+          举报原因
         </label>
         <textarea
           id="report-reason"
           className="report-reason-input"
           rows={4}
-          placeholder="请简要说明举报原因，便于我们核实处理"
+          placeholder="请简要说明举报原因，方便我们核实处理"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           maxLength={500}

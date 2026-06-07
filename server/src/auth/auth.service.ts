@@ -15,6 +15,7 @@ import {
   mapMailSendError,
   validateEmailForVerification,
 } from './email-validation';
+import { BusinessLogService } from '../logging/business-log.service';
 
 @Injectable()
 export class AuthService {
@@ -24,6 +25,7 @@ export class AuthService {
     private mail: MailService,
     private rateLimit: EmailCodeRateLimitService,
     private visibility: VisibilityService,
+    private businessLog: BusinessLogService,
   ) {}
 
   async sendVerificationCode(email: string) {
@@ -50,8 +52,11 @@ export class AuthService {
     }
 
     await this.rateLimit.recordSend(normalizedEmail);
+    this.businessLog.log('auth.verification_code.sent', {
+      email: normalizedEmail,
+    });
     return {
-      message: '验证码已发送。若本地未配置邮件服务，请查看后端日志。',
+      message: '验证码已发送到邮箱，请查看邮件并在 15 分钟内完成验证',
       devCode: process.env.NODE_ENV !== 'production' ? code : undefined,
     };
   }
@@ -70,7 +75,7 @@ export class AuthService {
       where: { nickname },
       select: { id: true },
     });
-    if (nickTaken) throw new ConflictException('昵称已存在');
+    if (nickTaken) throw new ConflictException('昵称已被占用');
 
     const code = dto.code.trim();
     if (!code) {
@@ -79,20 +84,27 @@ export class AuthService {
 
     const verified = await this.verifyCode(email, code);
     if (!verified) {
-      throw new BadRequestException('验证码无效或已过期');
+      throw new BadRequestException('邮箱验证码错误或已过期');
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
+    const role = await this.resolveRoleForEmail(email);
     const user = await this.prisma.user.create({
       data: {
         email,
         passwordHash,
         nickname,
         emailVerified: true,
+        role,
       },
     });
 
     await this.visibility.set(user.id, 'online');
+    this.businessLog.log('auth.register.success', {
+      userId: user.id,
+      email,
+      role,
+    });
     return this.tokenResponse(user);
   }
 
@@ -105,7 +117,12 @@ export class AuthService {
 
     const ok = await this.verifyCode(email, dto.code.trim());
     if (!ok) {
-      throw new BadRequestException('验证码无效或已过期');
+      throw new BadRequestException('邮箱验证码错误或已过期');
+    }
+
+    const sameAsCurrent = await bcrypt.compare(dto.password, user.passwordHash);
+    if (sameAsCurrent) {
+      throw new BadRequestException('新密码不能与旧密码一致');
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
@@ -113,7 +130,11 @@ export class AuthService {
       where: { id: user.id },
       data: { passwordHash },
     });
-    return { message: '密码已重置，请使用新密码登录。' };
+    this.businessLog.log('auth.password.reset', {
+      userId: user.id,
+      email,
+    });
+    return { message: '密码重置成功，请使用新密码登录' };
   }
 
   async login(dto: LoginDto) {
@@ -127,6 +148,20 @@ export class AuthService {
     if (!ok) throw new UnauthorizedException('邮箱或密码错误');
     if (user.isBanned) throw new UnauthorizedException('账号已被封禁');
 
+    const nextRole = await this.resolveRoleForEmail(email, user.role);
+    if (nextRole !== user.role) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { role: nextRole },
+      });
+      user.role = nextRole;
+    }
+
+    this.businessLog.log('auth.login.success', {
+      userId: user.id,
+      email,
+      role: user.role,
+    });
     return this.tokenResponse(user);
   }
 
@@ -150,11 +185,41 @@ export class AuthService {
     return validation.normalized;
   }
 
-  private tokenResponse(user: { id: string; email: string; nickname: string }) {
+  private async resolveRoleForEmail(email: string, currentRole = 'user') {
+    const configured = (process.env.ADMIN_EMAILS ?? '')
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (configured.includes(email.toLowerCase())) {
+      return 'superAdmin';
+    }
+
+    const adminCount = await this.prisma.user.count({
+      where: { role: { in: ['admin', 'superAdmin'] } },
+    });
+    if (adminCount === 0) {
+      return 'superAdmin';
+    }
+
+    return currentRole;
+  }
+
+  private tokenResponse(user: {
+    id: string;
+    email: string;
+    nickname: string;
+    role?: string;
+  }) {
     const token = this.jwt.sign({ sub: user.id, email: user.email });
     return {
       accessToken: token,
-      user: { id: user.id, email: user.email, nickname: user.nickname },
+      user: {
+        id: user.id,
+        email: user.email,
+        nickname: user.nickname,
+        role: user.role,
+      },
     };
   }
 }

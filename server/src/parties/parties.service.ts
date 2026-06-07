@@ -52,6 +52,22 @@ export class PartiesService {
     throw new BadRequestException('无法生成聊天室 ID，请稍后重试');
   }
 
+  getPartyFullMessage() {
+    return '该聊天室已满';
+  }
+
+  assertPartyHasCapacity(party: {
+    members: Array<{ userId: string }>;
+    maxMembers?: number | null;
+  }) {
+    if (
+      typeof party.maxMembers === 'number' &&
+      party.members.length >= party.maxMembers
+    ) {
+      throw new BadRequestException(this.getPartyFullMessage());
+    }
+  }
+
   async ensureRoomMetadata(roomId: string) {
     const room = await this.prisma.chatRoom.findUnique({
       where: { id: roomId },
@@ -93,6 +109,7 @@ export class PartiesService {
       data: {
         gameId,
         status: 'active',
+        maxMembers: null,
         members: {
           create: unique.map((userId) => ({
             userId,
@@ -138,6 +155,7 @@ export class PartiesService {
       data: {
         gameId,
         status: 'active',
+        maxMembers: null,
         members: {
           create: [{ userId, role: 'leader' }],
         },
@@ -191,6 +209,7 @@ export class PartiesService {
     if (party.members.some((m) => m.userId === userId)) {
       throw new BadRequestException('你已是聊天室成员');
     }
+    this.assertPartyHasCapacity(party);
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -458,6 +477,7 @@ export class PartiesService {
         id: room.party.id,
         gameId: room.party.gameId,
         status: room.party.status,
+        maxMembers: room.party.maxMembers,
       },
       members,
       leaderId: leader?.userId ?? null,
@@ -499,6 +519,36 @@ export class PartiesService {
     return this.prisma.party.update({
       where: { id: party!.id },
       data: { voiceHint: filterSensitive(voiceHint) },
+    });
+  }
+
+  async updateMemberLimit(
+    partyId: string,
+    userId: string,
+    maxMembers: number | null,
+  ) {
+    const party = await this.getOne(partyId, userId);
+    const leader = party!.members.find(
+      (m: { role: string }) => m.role === 'leader',
+    );
+    if (leader?.userId !== userId) {
+      throw new ForbiddenException('仅房主可修改聊天室人数上限');
+    }
+
+    const normalizedMaxMembers =
+      typeof maxMembers === 'number' ? Math.trunc(maxMembers) : null;
+    if (
+      normalizedMaxMembers !== null &&
+      normalizedMaxMembers < party!.members.length
+    ) {
+      throw new BadRequestException(
+        `人数上限不能小于当前成员数（${party!.members.length} 人）`,
+      );
+    }
+
+    return this.prisma.party.update({
+      where: { id: party!.id },
+      data: { maxMembers: normalizedMaxMembers },
     });
   }
 

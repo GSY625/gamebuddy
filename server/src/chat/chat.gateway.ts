@@ -50,6 +50,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await this.redis.set(this.presenceKey(userId), '1', 'EX', PRESENCE_TTL_SECONDS);
   }
 
+  private async ensureActiveUser(client: Socket) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId) {
+      client.disconnect();
+      return null;
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, isBanned: true },
+    });
+    if (!user || user.isBanned) {
+      client.emit('user:banned', { message: '账号已被封禁' });
+      client.disconnect();
+      return null;
+    }
+    return userId;
+  }
+
   private startPresenceRefresh(client: Socket, userId: string) {
     const timer = setInterval(() => {
       void this.markUserOnline(userId);
@@ -132,7 +150,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { roomId: string },
   ) {
-    const userId = client.data.userId as string;
+    const userId = await this.ensureActiveUser(client);
+    if (!userId) return { ok: false };
     await this.chat.getMessages(data.roomId, userId);
     client.join(`room:${data.roomId}`);
     await this.emitUnreadToRoomMembers(data.roomId);
@@ -144,7 +163,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { roomId: string; content: string },
   ) {
-    const userId = client.data.userId as string;
+    const userId = await this.ensureActiveUser(client);
+    if (!userId) return { ok: false };
     const { message, mentioned, senderNickname } = await this.chat.sendMessage(
       data.roomId,
       userId,
@@ -173,11 +193,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('room:typing')
-  typing(
+  async typing(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { roomId: string },
   ) {
-    const userId = client.data.userId as string;
+    const userId = await this.ensureActiveUser(client);
+    if (!userId) return { ok: false };
     client.to(`room:${data.roomId}`).emit('room:typing', { userId, roomId: data.roomId });
   }
 
@@ -186,7 +207,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { threadId: string },
   ) {
-    const userId = client.data.userId as string;
+    const userId = await this.ensureActiveUser(client);
+    if (!userId) return { ok: false };
     await this.directMessages.assertThreadParticipant(data.threadId, userId);
     client.join(`dm:${data.threadId}`);
     return { ok: true };
@@ -197,7 +219,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { receiverId: string; content: string },
   ) {
-    const senderId = client.data.userId as string;
+    const senderId = await this.ensureActiveUser(client);
+    if (!senderId) return { ok: false };
     const result = await this.directMessages.sendMessage(
       senderId,
       data.receiverId,

@@ -2,6 +2,7 @@ import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PartiesService } from '../parties/parties.service';
 import { filterSensitive } from '../common/sensitive-filter';
+import { RestrictionsService } from '../restrictions/restrictions.service';
 
 export type RoomMember = {
   userId: string;
@@ -14,6 +15,7 @@ export class ChatService {
     private prisma: PrismaService,
     @Inject(forwardRef(() => PartiesService))
     private parties: PartiesService,
+    private restrictions: RestrictionsService,
   ) {}
 
   async getRoomMembers(roomId: string): Promise<RoomMember[]> {
@@ -127,6 +129,7 @@ export class ChatService {
   }
 
   async sendMessage(roomId: string, userId: string, content: string) {
+    await this.restrictions.assertAllowed(userId, 'chat');
     await this.parties.assertRoomMember(roomId, userId);
     const filtered = filterSensitive(content.trim());
     const members = await this.getRoomMembers(roomId);

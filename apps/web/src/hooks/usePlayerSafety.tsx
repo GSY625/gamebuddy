@@ -4,16 +4,20 @@ import { ReportReasonModal } from '../components/ReportReasonModal';
 import { ThemeAlertModal } from '../components/ThemeAlertModal';
 import { ThemeConfirmModal } from '../components/ThemeConfirmModal';
 
-type UserTarget = { userId: string; nickname?: string };
+type UserTarget = {
+  userId: string;
+  nickname?: string;
+  targetType?: string;
+  targetId?: string;
+  detail?: string;
+  modalTitle?: string;
+  hint?: string;
+};
 
 type AlertState = { title?: string; message: string };
 
-/** 被对方拉黑时，邀约接口返回的文案（居中提示弹窗展示） */
 export const BLOCKED_BY_PLAYER_MSG = '您已被该玩家拉黑';
 
-/**
- * 玩家举报 / 拉黑 / 提示弹窗，可在任意游戏分区页面复用。
- */
 export function usePlayerSafety() {
   const [reportTarget, setReportTarget] = useState<UserTarget | null>(null);
   const [blockConfirm, setBlockConfirm] = useState<UserTarget | null>(null);
@@ -30,17 +34,38 @@ export function usePlayerSafety() {
     (message: string) => {
       const normalized =
         message.includes('拉黑') && message !== BLOCKED_BY_PLAYER_MSG
-          ? message.replace(/^对方已将你拉黑.*$/, BLOCKED_BY_PLAYER_MSG)
+          ? BLOCKED_BY_PLAYER_MSG
           : message;
-      showAlert(normalized, normalized === BLOCKED_BY_PLAYER_MSG ? '无法发送邀约' : '提示');
+      showAlert(normalized, normalized === BLOCKED_BY_PLAYER_MSG ? '无法发送邀请' : '提示');
     },
     [showAlert],
   );
 
-  const openReport = useCallback((userId: string, nickname?: string) => {
-    setReportError('');
-    setReportTarget({ userId, nickname });
-  }, []);
+  const openReport = useCallback(
+    (
+      userId: string,
+      nickname?: string,
+      options?: {
+        targetType?: string;
+        targetId?: string;
+        detail?: string;
+        modalTitle?: string;
+        hint?: string;
+      },
+    ) => {
+      setReportError('');
+      setReportTarget({
+        userId,
+        nickname,
+        targetType: options?.targetType,
+        targetId: options?.targetId,
+        detail: options?.detail,
+        modalTitle: options?.modalTitle,
+        hint: options?.hint,
+      });
+    },
+    [],
+  );
 
   const closeReport = useCallback(() => {
     if (reportSubmitting) return;
@@ -54,7 +79,13 @@ export function usePlayerSafety() {
       setReportSubmitting(true);
       setReportError('');
       try {
-        await api.report({ reportedId: reportTarget.userId, reason });
+        await api.report({
+          reportedId: reportTarget.userId,
+          reason,
+          detail: reportTarget.detail,
+          targetType: reportTarget.targetType,
+          targetId: reportTarget.targetId,
+        });
         setReportTarget(null);
         showAlert('举报已提交，我们会尽快处理', '举报成功');
       } catch (err) {
@@ -82,7 +113,7 @@ export function usePlayerSafety() {
       await api.block(blockConfirm.userId);
       const who = blockConfirm.nickname ? `「${blockConfirm.nickname}」` : '该玩家';
       setBlockConfirm(null);
-      showAlert(`已将${who}加入黑名单，双方将无法互相发送邀约`, '拉黑成功');
+      showAlert(`已将${who}加入黑名单，双方将无法互相发送邀请`, '拉黑成功');
     } catch (err) {
       showAlert(err instanceof Error ? err.message : '拉黑失败');
     } finally {
@@ -91,13 +122,15 @@ export function usePlayerSafety() {
   }, [blockConfirm, showAlert]);
 
   const blockConfirmMessage = blockConfirm?.nickname
-    ? `是否将「${blockConfirm.nickname}」拉黑？拉黑后双方将无法互相发送邀约。`
-    : '是否将该玩家拉黑？拉黑后双方将无法互相发送邀约。';
+    ? `是否将「${blockConfirm.nickname}」拉黑？拉黑后双方将无法互相发送邀请。`
+    : '是否将该玩家拉黑？拉黑后双方将无法互相发送邀请。';
 
   const modals = (
     <>
       <ReportReasonModal
         open={reportTarget !== null}
+        title={reportTarget?.modalTitle}
+        hint={reportTarget?.hint}
         targetNickname={reportTarget?.nickname}
         submitting={reportSubmitting}
         error={reportError}

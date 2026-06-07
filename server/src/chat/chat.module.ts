@@ -6,12 +6,14 @@ import { ChatGateway } from './chat.gateway';
 import { PartiesModule } from '../parties/parties.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { DirectMessagesModule } from '../direct-messages/direct-messages.module';
+import { RestrictionsModule } from '../restrictions/restrictions.module';
 
 @Module({
   imports: [
     forwardRef(() => PartiesModule),
     forwardRef(() => NotificationsModule),
     DirectMessagesModule,
+    RestrictionsModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET ?? 'dev-secret',
     }),

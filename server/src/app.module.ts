@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
@@ -18,10 +18,15 @@ import { FriendsModule } from './friends/friends.module';
 import { SearchModule } from './search/search.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DirectMessagesModule } from './direct-messages/direct-messages.module';
+import { AdminModule } from './admin/admin.module';
+import { RestrictionsModule } from './restrictions/restrictions.module';
+import { LoggingModule } from './logging/logging.module';
+import { RequestContextMiddleware } from './logging/request-context.middleware';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    LoggingModule,
     PrismaModule,
     RedisModule,
     AuthModule,
@@ -40,6 +45,12 @@ import { DirectMessagesModule } from './direct-messages/direct-messages.module';
     SearchModule,
     NotificationsModule,
     DirectMessagesModule,
+    AdminModule,
+    RestrictionsModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
+  }
+}
