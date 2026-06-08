@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { io, Socket } from 'socket.io-client';
+import { io, type Socket } from 'socket.io-client';
 import { api, getToken } from '@gamebuddy/api-client';
+import { ChatEmojiPicker } from '../components/ChatEmojiPicker';
 import { EmptyState } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
 import { ThemeAlertModal } from '../components/ThemeAlertModal';
 import { ThemeToast } from '../components/ThemeToast';
-import { ChatEmojiPicker } from '../components/ChatEmojiPicker';
 import { UserAvatar } from '../components/UserAvatar';
 import { UserAvatarLink } from '../components/UserAvatarLink';
 import { useAuth } from '../context/AuthContext';
+import { useOnlineGuard } from '../hooks/useOnlineGuard';
 import { WS_URL } from '../utils/runtimeEnv';
 
 type Conversation = {
@@ -35,9 +36,17 @@ type DirectMessage = {
   sender: { id: string; nickname: string; avatarUrl?: string | null };
 };
 
+const quickDmPhrases = [
+  '晚上一起开黑吗？',
+  '你一般几点在线？',
+  '这把想打什么模式？',
+  '要不要直接拉个房间语音？',
+];
+
 export default function DirectMessagesPage() {
   const { friendId } = useParams<{ friendId?: string }>();
   const { user, forceLogout } = useAuth();
+  const { guard } = useOnlineGuard();
   const nav = useNavigate();
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -51,6 +60,7 @@ export default function DirectMessagesPage() {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [toast, setToast] = useState('');
   const [alert, setAlert] = useState<string | null>(null);
+  const [inviting, setInviting] = useState(false);
 
   const loadConversations = useCallback(async () => {
     const rows = (await api.listDirectConversations()) as Conversation[];
@@ -73,10 +83,10 @@ export default function DirectMessagesPage() {
           api.getDirectConversation(targetFriendId),
           api.getDirectMessages(targetFriendId),
         ]);
-        const typedConversation = conversation as Conversation;
-        setActiveConversation(typedConversation);
+        const currentConversation = conversation as Conversation;
+        setActiveConversation(currentConversation);
         setMessages([...(rows as DirectMessage[])].reverse());
-        mergeConversation({ ...typedConversation, unreadCount: 0 });
+        mergeConversation({ ...currentConversation, unreadCount: 0 });
         await api.markDirectConversationRead(targetFriendId);
       } catch (err) {
         setAlert(err instanceof Error ? err.message : '加载私信失败');
@@ -106,6 +116,7 @@ export default function DirectMessagesPage() {
 
   useEffect(() => {
     if (!user) return;
+
     const socket = io(WS_URL, { auth: { token: getToken() } });
     socketRef.current = socket;
 
@@ -114,14 +125,15 @@ export default function DirectMessagesPage() {
         prev
           .map((item) => {
             if (item.threadId !== payload.threadId) return item;
-            const nextUnread =
+            const unreadCount =
               payload.message.senderId === user.id ||
               activeConversation?.threadId === payload.threadId
                 ? 0
                 : item.unreadCount + 1;
+
             return {
               ...item,
-              unreadCount: nextUnread,
+              unreadCount,
               lastMessageAt: payload.message.createdAt,
               lastMessage: {
                 id: payload.message.id,
@@ -153,6 +165,7 @@ export default function DirectMessagesPage() {
     socket.on('dm:conversation:update', () => {
       void loadConversations().catch(() => {});
     });
+
     socket.on('user:banned', (payload: { message?: string }) => {
       forceLogout(payload.message ?? '账号已被封禁');
     });
@@ -182,9 +195,27 @@ export default function DirectMessagesPage() {
     if (!text.trim() || !activeConversation || !socketRef.current) return;
     socketRef.current.emit('dm:message', {
       receiverId: activeConversation.friend.id,
-      content: text,
+      content: text.trim(),
     });
     setText('');
+  };
+
+  const inviteFriend = () => {
+    if (!activeConversation?.friend.id) return;
+    guard(async () => {
+      setInviting(true);
+      try {
+        await api.createInvite({
+          receiverId: activeConversation.friend.id,
+          message: '刚刚私信里约好了，直接一起开黑吧',
+        });
+        setToast('邀约已发送，对方可以去“邀约”页查看');
+      } catch (err) {
+        setToast(err instanceof Error ? err.message : '发送邀约失败');
+      } finally {
+        setInviting(false);
+      }
+    });
   };
 
   const activeThreadId = activeConversation?.threadId;
@@ -216,7 +247,7 @@ export default function DirectMessagesPage() {
 
       <PageHeader
         title="好友私信"
-        subtitle="和已添加的好友单独交流，聊开黑安排、上线时间和语音细节会更方便。"
+        subtitle="和已添加的好友单独交流，约时间、约模式、约语音都会更高效"
       />
 
       <div className="dm-page">
@@ -230,7 +261,7 @@ export default function DirectMessagesPage() {
             <EmptyState
               variant="wave"
               title="还没有私信会话"
-              description="先去好友页选择一位好友发起私信吧"
+              description="先去好友页找一个搭子，发起第一条私信吧"
             />
           ) : (
             <ul className="dm-conversation-list">
@@ -275,7 +306,7 @@ export default function DirectMessagesPage() {
               <EmptyState
                 variant="search"
                 title="选择一个会话"
-                description="从左侧打开已有私信，或去好友页给好友发起新的私信。"
+                description="从左侧打开已有私信，或者去好友页给好友发起新的私信"
               />
             </div>
           ) : messagesLoading || !activeConversation ? (
@@ -292,8 +323,18 @@ export default function DirectMessagesPage() {
                   />
                   <div>
                     <h3>{activeConversation.friend.nickname}</h3>
-                    <p className="muted small">仅已添加好友可互相私信</p>
+                    <p className="muted small">只有互为好友后，才可以开启私信交流</p>
                   </div>
+                </div>
+                <div className="dm-chat-header-actions">
+                  <button
+                    type="button"
+                    className="ghost small-btn"
+                    onClick={inviteFriend}
+                    disabled={inviting}
+                  >
+                    {inviting ? '发送中...' : '直接邀约'}
+                  </button>
                 </div>
               </header>
 
@@ -327,6 +368,19 @@ export default function DirectMessagesPage() {
                   })
                 )}
                 <div ref={bottomRef} />
+              </div>
+
+              <div className="dm-quick-actions">
+                {quickDmPhrases.map((phrase) => (
+                  <button
+                    key={phrase}
+                    type="button"
+                    className="ghost"
+                    onClick={() => setText(phrase)}
+                  >
+                    {phrase}
+                  </button>
+                ))}
               </div>
 
               <div className="chat-input">

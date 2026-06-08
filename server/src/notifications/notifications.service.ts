@@ -74,4 +74,12 @@ export class NotificationsService {
     this.chatGateway.emitToUser(userId, 'notification:update', { unreadCount });
     return { ok: true };
   }
+
+  async removeAll(userId: string) {
+    await this.prisma.notification.deleteMany({
+      where: { userId },
+    });
+    this.chatGateway.emitToUser(userId, 'notification:update', { unreadCount: 0 });
+    return { ok: true };
+  }
 }

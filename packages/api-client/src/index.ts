@@ -353,6 +353,7 @@ export const api = {
       avatarUrl?: string | null;
       bio?: string | null;
       isVip?: boolean;
+      emailVerified?: boolean;
       online?: boolean;
     }>(`/users/${id}`),
   updateMe: (body: Record<string, unknown>) =>
@@ -442,11 +443,28 @@ export const api = {
     if (!res.ok) throw new Error('Upload failed');
     return res.json() as Promise<{ url: string }>;
   },
-  createLfg: (body: Record<string, unknown>) =>
+  createLfg: (body: {
+    gameId: string;
+    title: string;
+    description?: string;
+    mode?: string;
+    voiceMode?: string;
+    playStyle?: string;
+    timeNote?: string;
+    genderPreference?: string;
+  }) =>
     request('/lfg-posts', { method: 'POST', body: JSON.stringify(body) }),
   updateLfg: (
     id: string,
-    body: { title?: string; description?: string; mode?: string },
+    body: {
+      title?: string;
+      description?: string;
+      mode?: string;
+      voiceMode?: string;
+      playStyle?: string;
+      timeNote?: string;
+      genderPreference?: string;
+    },
   ) =>
     request(`/lfg-posts/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   listLfg: (gameId?: string) =>
@@ -548,6 +566,10 @@ export const api = {
       Array<{
         id: string;
         friend: { id: string; nickname: string; avatarUrl?: string };
+        since: string;
+        presenceStatus: 'online' | 'invisible' | 'offline';
+        lastMessageAt?: string | null;
+        lastMessagePreview?: string | null;
       }>
     >('/friends'),
   listFriendRequests: () =>
@@ -846,6 +868,7 @@ export const api = {
         title: string;
         message: string;
         link?: string | null;
+        refId?: string | null;
         read: boolean;
         createdAt: string;
       }>
@@ -858,6 +881,8 @@ export const api = {
     request('/notifications/read-all', { method: 'PATCH' }),
   deleteNotification: (id: string) =>
     request(`/notifications/${id}`, { method: 'DELETE' }),
+  deleteAllNotifications: () =>
+    request('/notifications', { method: 'DELETE' }),
   markRoomRead: (roomId: string) =>
     request(`/rooms/${roomId}/read`, { method: 'POST' }),
   getRoomUnreadCount: (roomId: string) =>

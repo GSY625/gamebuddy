@@ -6,12 +6,16 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RedisService } from '../redis/redis.service';
+import { VisibilityService } from '../visibility/visibility.service';
 
 @Injectable()
 export class FriendsService {
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
+    private redis: RedisService,
+    private visibility: VisibilityService,
   ) {}
 
   /** 好友关系在库中只存一条（userId < friendId 字典序），避免列表重复 */
@@ -25,6 +29,18 @@ export class FriendsService {
       where: { userId_friendId: { userId, friendId } },
     });
     return Boolean(row);
+  }
+
+  private async resolveFriendPresence(userId: string, viewerId: string) {
+    const connected = (await this.redis.get(`presence:${userId}`)) === '1';
+    if (!connected) return 'offline' as const;
+
+    const visibility = await this.visibility.get(userId);
+    if (visibility === 'invisible') {
+      return viewerId === userId ? ('invisible' as const) : ('offline' as const);
+    }
+
+    return 'online' as const;
   }
 
   async listFriends(userId: string) {
@@ -43,14 +59,61 @@ export class FriendsService {
       id: string;
       friend: { id: string; nickname: string; avatarUrl: string | null };
       since: Date;
+      presenceStatus: 'online' | 'invisible' | 'offline';
+      lastMessageAt: Date | null;
+      lastMessagePreview: string | null;
     }> = [];
+
+    const threads = await this.prisma.directMessageThread.findMany({
+      where: {
+        OR: [{ userAId: userId }, { userBId: userId }],
+      },
+      include: {
+        messages: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { content: true, createdAt: true },
+        },
+      },
+    });
+
+    const threadMap = new Map<
+      string,
+      { lastMessageAt: Date; lastMessagePreview: string | null }
+    >();
+    for (const thread of threads) {
+      const otherId = thread.userAId === userId ? thread.userBId : thread.userAId;
+      const lastMessage = thread.messages[0] ?? null;
+      threadMap.set(otherId, {
+        lastMessageAt: thread.lastMessageAt,
+        lastMessagePreview: lastMessage?.content ?? null,
+      });
+    }
+
     for (const r of rows) {
       const other = r.userId === userId ? r.friend : r.user;
       if (seen.has(other.id)) continue;
       seen.add(other.id);
-      result.push({ id: r.id, friend: other, since: r.createdAt });
+      const presenceStatus = await this.resolveFriendPresence(other.id, userId);
+      const thread = threadMap.get(other.id);
+      result.push({
+        id: r.id,
+        friend: other,
+        since: r.createdAt,
+        presenceStatus,
+        lastMessageAt: thread?.lastMessageAt ?? null,
+        lastMessagePreview: thread?.lastMessagePreview ?? null,
+      });
     }
-    return result;
+
+    return result.sort((a, b) => {
+      if (a.presenceStatus === 'online' && b.presenceStatus !== 'online') return -1;
+      if (a.presenceStatus !== 'online' && b.presenceStatus === 'online') return 1;
+      const aTime = a.lastMessageAt?.getTime() ?? 0;
+      const bTime = b.lastMessageAt?.getTime() ?? 0;
+      if (aTime !== bTime) return bTime - aTime;
+      return b.since.getTime() - a.since.getTime();
+    });
   }
 
   async listReceivedRequests(userId: string) {

@@ -26,6 +26,7 @@ export type User = {
   role?: 'user' | 'admin' | 'superAdmin';
   avatarUrl?: string | null;
   bio?: string | null;
+  emailVerified?: boolean;
   visibilityStatus?: VisibilityStatus;
   nicknameCooldown?: NicknameCooldown;
 };

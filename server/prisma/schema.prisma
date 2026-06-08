@@ -113,6 +113,10 @@ model LfgPost {
   title       String
   description String?
   mode        String?
+  voiceMode   String?  @map("voice_mode")
+  playStyle   String?  @map("play_style")
+  timeNote    String?  @map("time_note")
+  genderPreference String? @map("gender_preference")
   expiresAt   DateTime? @map("expires_at")
   status      String   @default("open")
   weight      Int      @default(0)

@@ -42,4 +42,9 @@ export class NotificationsController {
   remove(@Req() req: { user: { id: string } }, @Param('id') id: string) {
     return this.notifications.remove(req.user.id, id);
   }
+
+  @Delete()
+  removeAll(@Req() req: { user: { id: string } }) {
+    return this.notifications.removeAll(req.user.id);
+  }
 }

@@ -23,6 +23,26 @@ export class CreateLfgPostDto {
   mode?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  voiceMode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  playStyle?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  timeNote?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  genderPreference?: string;
+
+  @IsOptional()
   @IsDateString()
   expiresAt?: string;
 }
@@ -40,6 +60,26 @@ export class UpdateLfgPostDto {
   @IsOptional()
   @IsString()
   mode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  voiceMode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  playStyle?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  timeNote?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  genderPreference?: string;
 }
 
 export class ApplyLfgDto {

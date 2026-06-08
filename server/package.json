@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only -r reflect-metadata src/main.ts",
-    "build": "tsc && node scripts/sync-generated-prisma.cjs",
+    "build": "tsc --incremental false && node scripts/sync-generated-prisma.cjs",
     "start": "node scripts/sync-generated-prisma.cjs && node dist/main.js",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate": "prisma migrate deploy",

@@ -17,8 +17,8 @@ export function ThemeToast({
 }: Props) {
   useEffect(() => {
     if (!show) return;
-    const t = window.setTimeout(onClose, durationMs);
-    return () => window.clearTimeout(t);
+    const timer = window.setTimeout(onClose, durationMs);
+    return () => window.clearTimeout(timer);
   }, [show, onClose, durationMs]);
 
   if (!show) return null;

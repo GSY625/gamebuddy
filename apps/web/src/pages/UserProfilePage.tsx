@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '@gamebuddy/api-client';
-import { useAuth } from '../context/AuthContext';
 import { BackButton } from '../components/BackButton';
 import { PageHeader } from '../components/PageHeader';
-import { UserAvatar } from '../components/UserAvatar';
 import { ThemeToast } from '../components/ThemeToast';
+import { UserAvatar } from '../components/UserAvatar';
+import { useAuth } from '../context/AuthContext';
 import { usePlayerSafety } from '../hooks/usePlayerSafety';
 
 type PublicUser = {
@@ -14,6 +14,7 @@ type PublicUser = {
   avatarUrl?: string | null;
   bio?: string | null;
   isVip?: boolean;
+  emailVerified?: boolean;
   online?: boolean;
 };
 
@@ -34,12 +35,13 @@ export default function UserProfilePage() {
       nav('/profile', { replace: true });
       return;
     }
+
     setLoading(true);
     Promise.all([api.getUser(userId), api.friendStatus(userId)])
-      .then(([u, st]) => {
-        setProfile(u as PublicUser);
-        setFriendStatus(st.status);
-        setRequestId(st.requestId);
+      .then(([nextProfile, status]) => {
+        setProfile(nextProfile as PublicUser);
+        setFriendStatus(status.status);
+        setRequestId(status.requestId);
       })
       .catch(() => {
         nav(-1);
@@ -70,7 +72,7 @@ export default function UserProfilePage() {
   };
 
   if (loading) {
-    return <div className="loading page-wrap">加载中…</div>;
+    return <div className="loading page-wrap">加载中...</div>;
   }
 
   if (!profile) return null;
@@ -81,6 +83,7 @@ export default function UserProfilePage() {
       <BackButton fallback="/friends" />
       <ThemeToast message={toast} show={Boolean(toast)} onClose={() => setToast('')} />
       <PageHeader title="用户主页" subtitle="查看搭子资料" />
+
       <div className="glass-panel user-profile-card">
         <UserAvatar
           url={profile.avatarUrl}
@@ -89,29 +92,53 @@ export default function UserProfilePage() {
           className="profile-avatar-lg"
           status={profile.online ? 'online' : 'invisible'}
         />
+
         <h2 className="user-profile-nickname">
           {profile.nickname}
           {profile.isVip && <span className="vip-badge">VIP</span>}
         </h2>
+
         <p className={`user-profile-status ${profile.online ? 'online' : ''}`}>
           {profile.online ? '在线' : '离线'}
         </p>
+
+        <div className="user-profile-meta-chips">
+          <span
+            className={`profile-verify-badge ${profile.emailVerified ? 'verified' : 'pending'}`}
+          >
+            {profile.emailVerified ? '邮箱已验证' : '邮箱未验证'}
+          </span>
+          <span className="user-profile-meta-chip">
+            {profile.bio?.trim() ? '资料较完整' : '资料待完善'}
+          </span>
+        </div>
+
         <p className="user-profile-bio">
-          {profile.bio?.trim() ? profile.bio : '这个人很懒，还没有写简介～'}
+          {profile.bio?.trim() ? profile.bio : '这个人还没有留下自我介绍。'}
         </p>
 
         <div className="user-profile-actions">
           {friendStatus === 'friends' && (
-            <span className="muted">已是好友</span>
+            <>
+              <span className="muted">已经是好友</span>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => nav(`/messages/${profile.id}`)}
+              >
+                私信
+              </button>
+            </>
           )}
-          {friendStatus === 'pending_sent' && (
-            <span className="muted">好友申请已发送</span>
-          )}
+
+          {friendStatus === 'pending_sent' && <span className="muted">好友申请已发送</span>}
+
           {friendStatus === 'pending_received' && (
             <button type="button" onClick={() => void acceptFriend()}>
               同意好友申请
             </button>
           )}
+
           {friendStatus === 'none' && (
             <button type="button" onClick={() => void sendFriend()}>
               加好友

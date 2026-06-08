@@ -195,6 +195,7 @@ export class UsersService {
       avatarUrl: user.avatarUrl,
       bio: user.bio,
       isVip: user.isVip,
+      emailVerified: user.emailVerified,
       online: connected && visible,
     };
   }

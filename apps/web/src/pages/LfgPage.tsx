@@ -18,6 +18,10 @@ type Post = {
   title: string;
   description?: string;
   mode?: string;
+  voiceMode?: string | null;
+  playStyle?: string | null;
+  timeNote?: string | null;
+  genderPreference?: string | null;
   author: { id: string; nickname: string };
   game: { name: string; icon: string };
   _count?: { applications: number };
@@ -36,6 +40,10 @@ type MyApplication = {
     id: string;
     title: string;
     status: string;
+    voiceMode?: string | null;
+    playStyle?: string | null;
+    timeNote?: string | null;
+    genderPreference?: string | null;
     game: { name: string; icon: string };
     author: { nickname: string };
   };
@@ -56,6 +64,55 @@ function postStatusLabel(status: string) {
   return status;
 }
 
+const voiceModeItems = [
+  { value: 'voice_required', label: '必须语音' },
+  { value: 'voice_optional', label: '可语音可打字' },
+  { value: 'no_voice', label: '不想开语音' },
+];
+
+const playStyleItems = [
+  { value: 'casual', label: '轻松娱乐' },
+  { value: 'rank_up', label: '认真上分' },
+  { value: 'teaching', label: '教学带带' },
+  { value: 'entertainment', label: '整活唠嗑' },
+];
+
+const genderPreferenceItems = [
+  { value: 'all', label: '不限性别' },
+  { value: 'girls_only', label: '偏好女生' },
+  { value: 'boys_only', label: '偏好男生' },
+];
+
+function voiceModeLabel(value?: string | null) {
+  return voiceModeItems.find((item) => item.value === value)?.label ?? value ?? '';
+}
+
+function playStyleLabel(value?: string | null) {
+  return playStyleItems.find((item) => item.value === value)?.label ?? value ?? '';
+}
+
+function genderPreferenceLabel(value?: string | null) {
+  return (
+    genderPreferenceItems.find((item) => item.value === value)?.label ?? value ?? ''
+  );
+}
+
+function buildPostHighlights(post: {
+  mode?: string | null;
+  voiceMode?: string | null;
+  playStyle?: string | null;
+  timeNote?: string | null;
+  genderPreference?: string | null;
+}) {
+  return [
+    post.mode ? `模式：${post.mode}` : '',
+    post.voiceMode ? voiceModeLabel(post.voiceMode) : '',
+    post.playStyle ? playStyleLabel(post.playStyle) : '',
+    post.timeNote ? `在线：${post.timeNote}` : '',
+    post.genderPreference ? genderPreferenceLabel(post.genderPreference) : '',
+  ].filter(Boolean);
+}
+
 export default function LfgPage() {
   const { user } = useAuth();
   const { guard } = useOnlineGuard();
@@ -71,6 +128,10 @@ export default function LfgPage() {
   const [myApps, setMyApps] = useState<MyApplication[]>([]);
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
+  const [voiceMode, setVoiceMode] = useState('');
+  const [playStyle, setPlayStyle] = useState('');
+  const [timeNote, setTimeNote] = useState('');
+  const [genderPreference, setGenderPreference] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [apps, setApps] = useState<Application[]>([]);
   const [pendingDelete, setPendingDelete] = useState<Post | null>(null);
@@ -81,6 +142,10 @@ export default function LfgPage() {
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
+  const [editVoiceMode, setEditVoiceMode] = useState('');
+  const [editPlayStyle, setEditPlayStyle] = useState('');
+  const [editTimeNote, setEditTimeNote] = useState('');
+  const [editGenderPreference, setEditGenderPreference] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   const [toast, setToast] = useState('');
 
@@ -142,9 +207,21 @@ export default function LfgPage() {
     e.preventDefault();
     guard(async () => {
       if (!postGameId || !title) return;
-      await api.createLfg({ gameId: postGameId, title, description: desc });
+      await api.createLfg({
+        gameId: postGameId,
+        title,
+        description: desc,
+        voiceMode: voiceMode || undefined,
+        playStyle: playStyle || undefined,
+        timeNote: timeNote.trim() || undefined,
+        genderPreference: genderPreference || undefined,
+      });
       setTitle('');
       setDesc('');
+      setVoiceMode('');
+      setPlayStyle('');
+      setTimeNote('');
+      setGenderPreference('');
       load();
     });
   };
@@ -177,6 +254,10 @@ export default function LfgPage() {
     setEditingPost(p);
     setEditTitle(p.title);
     setEditDesc(p.description ?? '');
+    setEditVoiceMode(p.voiceMode ?? '');
+    setEditPlayStyle(p.playStyle ?? '');
+    setEditTimeNote(p.timeNote ?? '');
+    setEditGenderPreference(p.genderPreference ?? '');
   };
 
   const submitEdit = () => {
@@ -187,6 +268,10 @@ export default function LfgPage() {
         await api.updateLfg(editingPost.id, {
           title: editTitle.trim(),
           description: editDesc,
+          voiceMode: editVoiceMode || undefined,
+          playStyle: editPlayStyle || undefined,
+          timeNote: editTimeNote.trim() || undefined,
+          genderPreference: editGenderPreference || undefined,
         });
         setEditingPost(null);
         setToast('帖子已更新');
@@ -383,6 +468,47 @@ export default function LfgPage() {
           onChange={(e) => setEditDesc(e.target.value)}
           rows={4}
         />
+        <div className="lfg-structured-grid">
+          <div>
+            <label className="form-field-label">语音需求</label>
+            <ThemeSelect
+              value={editVoiceMode}
+              onChange={setEditVoiceMode}
+              items={voiceModeItems}
+              placeholder="暂不填写"
+            />
+          </div>
+          <div>
+            <label className="form-field-label">玩法偏好</label>
+            <ThemeSelect
+              value={editPlayStyle}
+              onChange={setEditPlayStyle}
+              items={playStyleItems}
+              placeholder="暂不填写"
+            />
+          </div>
+          <div>
+            <label className="form-field-label">性别偏好</label>
+            <ThemeSelect
+              value={editGenderPreference}
+              onChange={setEditGenderPreference}
+              items={genderPreferenceItems}
+              placeholder="暂不填写"
+            />
+          </div>
+          <div>
+            <label className="form-field-label" htmlFor="lfg-edit-time-note">
+              在线时间
+            </label>
+            <input
+              id="lfg-edit-time-note"
+              value={editTimeNote}
+              onChange={(e) => setEditTimeNote(e.target.value)}
+              maxLength={40}
+              placeholder="例如：工作日晚上 8 点后"
+            />
+          </div>
+        </div>
       </ThemeModal>
 
       <PageHeader title="找搭子帖" subtitle="发布需求或申请他人的帖子，一起开黑" />
@@ -411,6 +537,33 @@ export default function LfgPage() {
           </div>
 
           <form className="inline-form glass-panel" onSubmit={create}>
+            <ThemeSelect
+              className="inline-form-select"
+              value={voiceMode}
+              onChange={setVoiceMode}
+              items={voiceModeItems}
+              placeholder="语音需求"
+            />
+            <ThemeSelect
+              className="inline-form-select"
+              value={playStyle}
+              onChange={setPlayStyle}
+              items={playStyleItems}
+              placeholder="玩法偏好"
+            />
+            <ThemeSelect
+              className="inline-form-select"
+              value={genderPreference}
+              onChange={setGenderPreference}
+              items={genderPreferenceItems}
+              placeholder="性别偏好"
+            />
+            <input
+              placeholder="在线时间，例如：周末下午或每天 21 点后"
+              value={timeNote}
+              onChange={(e) => setTimeNote(e.target.value)}
+              maxLength={40}
+            />
             <ThemeSelect className="inline-form-select" value={postGameId} onChange={setPostGameId} items={gameItems} required />
             <input placeholder="标题，如：晚上排位缺辅助" value={title} onChange={(e) => setTitle(e.target.value)} required />
             <input placeholder="补充说明" value={desc} onChange={(e) => setDesc(e.target.value)} />
@@ -425,6 +578,7 @@ export default function LfgPage() {
                 const isOwn = user?.id === p.author.id;
                 const pendingCount = p._count?.applications ?? 0;
                 const myAppStatus = myAppStatusByPostId.get(p.id);
+                const highlights = buildPostHighlights(p);
                 return (
                   <li key={p.id} className="post-card glass-panel">
                     <div>
@@ -432,6 +586,15 @@ export default function LfgPage() {
                       <strong>{p.title}</strong>
                       <span className="muted"> — {p.author.nickname}</span>
                       {isOwn && <span className="own-post-tag">我的帖子</span>}
+                      {highlights.length > 0 && (
+                        <div className="lfg-post-highlights">
+                          {highlights.map((item) => (
+                            <span key={item} className="lfg-post-chip">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       {p.description && <p>{p.description}</p>}
                     </div>
                     <div className="actions">
@@ -529,6 +692,15 @@ export default function LfgPage() {
                   <GameIcon icon={a.post.game.icon} name={a.post.game.name} className="game-icon-sm" />
                   <strong>{a.post.title}</strong>
                   <span className="muted"> — {a.post.author.nickname}</span>
+                  {buildPostHighlights(a.post).length > 0 && (
+                    <div className="lfg-post-highlights">
+                      {buildPostHighlights(a.post).map((item) => (
+                        <span key={item} className="lfg-post-chip">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <p className="muted small">
                     申请状态：<span className={`status-badge status-${a.status}`}>{appStatusLabel(a.status)}</span>
                     {' · '}

@@ -21,6 +21,11 @@ export class LfgService {
     private restrictions: RestrictionsService,
   ) {}
 
+  private normalizeOptional(value?: string | null) {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
   async create(authorId: string, dto: CreateLfgPostDto) {
     await this.visibility.assertOnline(authorId);
     await this.restrictions.assertAllowed(authorId, 'lfg');
@@ -28,9 +33,13 @@ export class LfgService {
       data: {
         authorId,
         gameId: dto.gameId,
-        title: dto.title,
-        description: dto.description,
-        mode: dto.mode,
+        title: dto.title.trim(),
+        description: this.normalizeOptional(dto.description),
+        mode: this.normalizeOptional(dto.mode),
+        voiceMode: this.normalizeOptional(dto.voiceMode),
+        playStyle: this.normalizeOptional(dto.playStyle),
+        timeNote: this.normalizeOptional(dto.timeNote),
+        genderPreference: this.normalizeOptional(dto.genderPreference),
         expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
       },
       include: {
@@ -56,8 +65,27 @@ export class LfgService {
       where: { id: postId },
       data: {
         ...(dto.title !== undefined ? { title: dto.title.trim() } : {}),
-        ...(dto.description !== undefined ? { description: dto.description } : {}),
-        ...(dto.mode !== undefined ? { mode: dto.mode } : {}),
+        ...(dto.description !== undefined
+          ? { description: this.normalizeOptional(dto.description) ?? null }
+          : {}),
+        ...(dto.mode !== undefined
+          ? { mode: this.normalizeOptional(dto.mode) ?? null }
+          : {}),
+        ...(dto.voiceMode !== undefined
+          ? { voiceMode: this.normalizeOptional(dto.voiceMode) ?? null }
+          : {}),
+        ...(dto.playStyle !== undefined
+          ? { playStyle: this.normalizeOptional(dto.playStyle) ?? null }
+          : {}),
+        ...(dto.timeNote !== undefined
+          ? { timeNote: this.normalizeOptional(dto.timeNote) ?? null }
+          : {}),
+        ...(dto.genderPreference !== undefined
+          ? {
+              genderPreference:
+                this.normalizeOptional(dto.genderPreference) ?? null,
+            }
+          : {}),
       },
       include: {
         game: { select: { name: true, icon: true } },

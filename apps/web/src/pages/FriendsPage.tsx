@@ -10,6 +10,10 @@ import { ThemeConfirmModal } from '../components/ThemeConfirmModal';
 type FriendRow = {
   id: string;
   friend: { id: string; nickname: string; avatarUrl?: string };
+  since: string;
+  presenceStatus: 'online' | 'invisible' | 'offline';
+  lastMessageAt?: string | null;
+  lastMessagePreview?: string | null;
 };
 
 type RequestRow = {
@@ -21,6 +25,17 @@ type PendingDelete = {
   friendId: string;
   nickname: string;
 };
+
+function presenceLabel(status: FriendRow['presenceStatus']) {
+  if (status === 'online') return '在线';
+  if (status === 'invisible') return '隐身';
+  return '离线';
+}
+
+function formatFriendTime(value?: string | null) {
+  if (!value) return '还没有私信过';
+  return new Date(value).toLocaleString('zh-CN');
+}
 
 export default function FriendsPage() {
   const nav = useNavigate();
@@ -136,7 +151,22 @@ export default function FriendsPage() {
                   name={f.friend.nickname}
                   size={40}
                 />
-                <span>{f.friend.nickname}</span>
+                <div className="friend-list-meta">
+                  <div className="friend-list-name-row">
+                    <span>{f.friend.nickname}</span>
+                    <span
+                      className={`friend-presence-badge ${f.presenceStatus}`}
+                    >
+                      {presenceLabel(f.presenceStatus)}
+                    </span>
+                  </div>
+                  <p className="muted small friend-list-preview">
+                    {f.lastMessagePreview || '先发一句私信，把常玩的时间和模式约起来'}
+                  </p>
+                  <p className="muted small friend-list-time">
+                    最近私信：{formatFriendTime(f.lastMessageAt)}
+                  </p>
+                </div>
                 <button
                   type="button"
                   className="ghost small-btn"
