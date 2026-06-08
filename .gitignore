@@ -9,6 +9,9 @@ server/src/generated/
 .env.local
 uploads/
 dev.db
+server/prisma/*.db
+server/prisma/*.db-*
+server/prisma/backup/
 *.log
 .DS_Store
 target/

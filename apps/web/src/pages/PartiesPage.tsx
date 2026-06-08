@@ -7,8 +7,7 @@ import { PageHeader } from '../components/PageHeader';
 import { ThemeModal } from '../components/ThemeModal';
 import { ThemeAlertModal } from '../components/ThemeAlertModal';
 import { useOnlineGuard } from '../hooks/useOnlineGuard';
-
-const WS_URL = import.meta.env.VITE_WS_URL ?? 'http://localhost:3000';
+import { WS_URL } from '../utils/runtimeEnv';
 
 type Party = {
   id: string;

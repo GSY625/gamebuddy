@@ -5,6 +5,11 @@ import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { AppLoggerService } from './logging/app-logger.service';
+import {
+  getUploadDir,
+  shouldServeLocalUploads,
+  validateServerRuntimeEnv,
+} from './common/runtime-env';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -12,6 +17,8 @@ async function bootstrap() {
   });
   const logger = app.get(AppLoggerService);
   app.useLogger(logger);
+  validateServerRuntimeEnv();
+  app.enableShutdownHooks();
 
   process.on('unhandledRejection', (reason) => {
     logger.error('process.unhandled_rejection', {}, reason);
@@ -27,8 +34,10 @@ async function bootstrap() {
     origin: process.env.CORS_ORIGIN?.split(',') ?? true,
     credentials: true,
   });
-  const uploadDir = process.env.UPLOAD_DIR ?? './uploads';
-  app.useStaticAssets(join(process.cwd(), uploadDir), { prefix: '/uploads/' });
+  if (shouldServeLocalUploads()) {
+    const uploadDir = getUploadDir();
+    app.useStaticAssets(join(process.cwd(), uploadDir), { prefix: '/uploads/' });
+  }
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   logger.log('app.started', { port });

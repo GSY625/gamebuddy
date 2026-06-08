@@ -2,14 +2,21 @@
   "name": "server",
   "version": "0.1.0",
   "private": true,
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only -r reflect-metadata src/main.ts",
     "build": "tsc && node scripts/sync-generated-prisma.cjs",
     "start": "node scripts/sync-generated-prisma.cjs && node dist/main.js",
+    "db:migrate:dev": "prisma migrate dev",
     "db:migrate": "prisma migrate deploy",
-    "db:push": "prisma db push",
-    "db:seed": "ts-node prisma/seed.ts",
-    "db:setup": "prisma generate && prisma db push && npm run db:seed",
+    "db:migrate:status": "prisma migrate status",
+    "db:reset": "prisma migrate reset --force",
+    "db:seed": "prisma db seed",
+    "db:import:sqlite": "ts-node prisma/import-sqlite.ts",
+    "db:repair:admin-logs": "ts-node prisma/repair-admin-action-log-notes.ts",
+    "db:setup": "prisma generate && prisma migrate deploy && npm run db:seed",
     "prisma:generate": "prisma generate"
   },
   "dependencies": {

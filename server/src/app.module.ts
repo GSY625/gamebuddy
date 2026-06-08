@@ -22,11 +22,15 @@ import { AdminModule } from './admin/admin.module';
 import { RestrictionsModule } from './restrictions/restrictions.module';
 import { LoggingModule } from './logging/logging.module';
 import { RequestContextMiddleware } from './logging/request-context.middleware';
+import { RateLimitModule } from './rate-limit/rate-limit.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     LoggingModule,
+    HealthModule,
+    RateLimitModule,
     PrismaModule,
     RedisModule,
     AuthModule,

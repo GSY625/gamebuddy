@@ -6,7 +6,7 @@ import {
   useCallback,
   ReactNode,
 } from 'react';
-import { api, configureAuth, getToken } from '@gamebuddy/api-client';
+import { api } from '@gamebuddy/api-client';
 import { ThemeToast } from '../components/ThemeToast';
 
 export type VisibilityStatus = 'online' | 'invisible';
@@ -56,19 +56,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user?.visibilityStatus === 'invisible' ? 'invisible' : 'online';
 
   const refreshUser = async () => {
-    if (!getToken()) {
-      setUser(null);
-      return;
-    }
     try {
       const me = (await api.getMe()) as User;
       setUser(me);
     } catch {
-      configureAuth({
-        get: () => null,
-        set: () => {},
-        clear: () => localStorage.removeItem('gb_token'),
-      });
       setUser(null);
     }
   };
@@ -78,13 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (email: string, password: string) => {
-    const res = await api.login({ email, password });
-    configureAuth({
-      get: () => localStorage.getItem('gb_token'),
-      set: (t) => localStorage.setItem('gb_token', t),
-      clear: () => localStorage.removeItem('gb_token'),
-    });
-    localStorage.setItem('gb_token', res.accessToken);
+    await api.login({ email, password });
     await refreshUser();
   };
 
@@ -94,13 +79,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     nickname: string;
     code: string;
   }) => {
-    const res = await api.register(data);
-    localStorage.setItem('gb_token', res.accessToken);
+    await api.register(data);
     await refreshUser();
   };
 
   const logout = () => {
-    localStorage.removeItem('gb_token');
+    void api.logout().catch(() => {});
     setUser(null);
   };
 

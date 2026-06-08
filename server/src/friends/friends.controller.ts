@@ -13,6 +13,8 @@ import {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { FriendsService } from './friends.service';
 import { SendFriendRequestDto } from './friends.dto';
+import { HttpRateLimitGuard } from '../rate-limit/rate-limit.guard';
+import { RateLimit } from '../rate-limit/rate-limit.decorator';
 
 @Controller('friends')
 @UseGuards(JwtAuthGuard)
@@ -30,6 +32,14 @@ export class FriendsController {
   }
 
   @Post('requests')
+  @UseGuards(HttpRateLimitGuard)
+  @RateLimit({
+    bucket: 'friend-request',
+    limit: 10,
+    windowSeconds: 60,
+    keyBy: 'user-or-ip',
+    message: '发送好友申请过于频繁，请稍后再试',
+  })
   send(
     @Req() req: { user: { id: string } },
     @Body() dto: SendFriendRequestDto,

@@ -10,8 +10,7 @@ import { ThemeToast } from './ThemeToast';
 import { GlobalSearch } from './GlobalSearch';
 import { NotificationBell } from './NotificationBell';
 import { useOnboarding } from '../context/OnboardingContext';
-
-const WS_URL = import.meta.env.VITE_WS_URL ?? 'http://localhost:3000';
+import { WS_URL } from '../utils/runtimeEnv';
 
 export function Layout() {
   const { user, logout, visibilityStatus } = useAuth();

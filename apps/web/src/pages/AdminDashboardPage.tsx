@@ -3,16 +3,21 @@ import { Link } from 'react-router-dom';
 import { api } from '@gamebuddy/api-client';
 import { PageHeader } from '../components/PageHeader';
 import { AdminNav } from '../components/AdminNav';
+import {
+  formatAdminActionLabel,
+  formatAdminActionNote,
+  formatAdminTargetLabel,
+} from '../utils/adminActionLog';
 
 type Overview = {
-      metrics: {
-        pendingReports: number;
-        totalReports: number;
-        reviewedToday: number;
-        bannedUsers: number;
-        adminUsers: number;
-        activeRestrictions: number;
-      };
+  metrics: {
+    pendingReports: number;
+    totalReports: number;
+    reviewedToday: number;
+    bannedUsers: number;
+    adminUsers: number;
+    activeRestrictions: number;
+  };
   recentActions: Array<{
     id: string;
     action: string;
@@ -41,7 +46,10 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="page-wrap">
-      <PageHeader title="后台概览" subtitle="先处理举报和用户风险，再逐步完善内容审核能力。" />
+      <PageHeader
+        title="后台概览"
+        subtitle="先处理举报和用户风险，再逐步完善内容审核能力。"
+      />
       <AdminNav />
 
       {data && (
@@ -91,21 +99,26 @@ export default function AdminDashboardPage() {
               <p className="muted small">还没有管理员操作记录</p>
             ) : (
               <ul className="admin-simple-list">
-                {data.recentActions.map((item) => (
-                  <li key={item.id} className="admin-simple-item">
-                    <div>
-                      <strong>{item.actor.nickname}</strong>
-                      <span className="muted small">
-                        {' '}
-                        执行了 {item.action} / {item.targetType}
-                      </span>
-                      {item.note && <p className="muted small">{item.note}</p>}
-                    </div>
-                    <time className="muted small">
-                      {new Date(item.createdAt).toLocaleString('zh-CN')}
-                    </time>
-                  </li>
-                ))}
+                {data.recentActions.map((item) => {
+                  const note = formatAdminActionNote(item.note);
+
+                  return (
+                    <li key={item.id} className="admin-simple-item">
+                      <div>
+                        <strong>{item.actor.nickname}</strong>
+                        <span className="muted small">
+                          {' '}
+                          执行了 {formatAdminActionLabel(item.action)} /{' '}
+                          {formatAdminTargetLabel(item.targetType)}
+                        </span>
+                        {note && <p className="muted small">{note}</p>}
+                      </div>
+                      <time className="muted small">
+                        {new Date(item.createdAt).toLocaleString('zh-CN')}
+                      </time>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>

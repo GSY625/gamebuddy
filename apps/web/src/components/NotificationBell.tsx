@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { api, getToken } from '@gamebuddy/api-client';
-
-const WS_URL = import.meta.env.VITE_WS_URL ?? 'http://localhost:3000';
+import { WS_URL } from '../utils/runtimeEnv';
 
 export function NotificationBell() {
   const [count, setCount] = useState(0);

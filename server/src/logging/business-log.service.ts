@@ -11,4 +11,11 @@ export class BusinessLogService {
       ...payload,
     });
   }
+
+  warn(event: string, payload: Record<string, unknown> = {}) {
+    this.logger.warn(event, {
+      category: 'business',
+      ...payload,
+    });
+  }
 }

@@ -1,8 +1,8 @@
-# GameBuddy — 游戏搭子平台
+# GameBuddy
 
-找游戏搭子、发帖组队、邀约匹配、应用内文字聊天；语音 MVP 通过 QQ/微信/Discord 说明。
+游戏搭子平台 Web 应用，核心目标是帮助用户高效找到合适的游戏伙伴，围绕找搭子、发招募、即时沟通、筛选匹配和建立信任来设计。
 
-## 本地运行（无需 Docker）
+## 本地运行
 
 ### 1. 安装依赖
 
@@ -11,53 +11,71 @@ cd gamebuddy
 npm install --legacy-peer-deps
 ```
 
-### 2. 初始化数据库（SQLite，自动创建 `server/prisma/dev.db`）
+### 2. 启动基础服务
+
+项目当前默认使用 PostgreSQL + Redis，本地开发直接启动：
+
+```bash
+docker compose up -d postgres redis
+```
+
+### 3. 初始化数据库
 
 ```bash
 cd server
-npx prisma db push
+npm run prisma:generate
+npm run db:migrate
 npm run db:seed
 ```
 
-### 3. 启动
+### 4. 启动项目
 
-在仓库根目录：
+在仓库根目录执行：
 
 ```bash
 npm run dev
 ```
 
-- API：http://localhost:3000
-- Web：http://localhost:5173
+- API: `http://localhost:3000`
+- Web: `http://localhost:5173`
 
-注册时若未配置 SMTP，邮箱验证码会打印在后端控制台。
+如果本地没有配置 SMTP，注册时的邮箱验证码会打印到后端终端。
 
 ## 技术栈
 
-- **前端**：React + Vite（`apps/web`）
-- **后端**：NestJS + Prisma + SQLite（本地）/ PostgreSQL（生产可选）
-- **实时**：Socket.IO 文字聊天
-- **种子游戏**：英雄联盟、王者荣耀、无畏契约
+- 前端：React + Vite，目录在 `apps/web`
+- 后端：NestJS + Prisma + PostgreSQL
+- 实时通信：Socket.IO
+- 缓存与限流：Redis
 
 ## 主要功能
 
-- 邮箱注册 / 登录
-- 游戏分区 + 动态搭子档案（段位、截图等按游戏配置）
-- 发帖找搭子 / 筛选玩家 / 发起邀约
-- 组队后进入聊天室（文字 + 第三方语音说明）
-- 举报 / 拉黑 / 敏感词过滤
+- 邮箱注册 / 登录 / 找回密码
+- 游戏分区与个人搭子资料
+- 发招募、筛选玩家、邀请组队
+- 聊天室聊天与好友私信
+- 举报、封禁、功能限制、后台审核
 
 ## 项目结构
 
-```
+```text
 gamebuddy/
-  apps/web/          # React 客户端
-  apps/desktop/      # Tauri 桌面（需 Rust，见该目录 README）
-  packages/shared/   # 游戏 Schema 种子
-  packages/api-client/
-  server/            # NestJS API
+  apps/web/            # React Web 客户端
+  packages/shared/     # 共享类型与游戏配置
+  packages/api-client/ # 接口调用封装
+  server/              # NestJS API
+  docs/                # 项目文档
 ```
 
-## 生产部署
+## 数据库说明
 
-见 `docs/DEPLOYMENT.md`（可选，本地开发可忽略）。
+- `server/prisma/backup/dev-legacy-sqlite.db` 仅作为历史 SQLite 备份使用
+- 当前开发与运行流程不再依赖 `server/prisma/dev.db`
+- 旧 SQLite 导入 PostgreSQL 的方式见 [docs/POSTGRESQL_PRISMA.md](docs/POSTGRESQL_PRISMA.md)
+
+## 部署相关文档
+
+- PostgreSQL / Prisma 开发与导入说明：
+  [docs/POSTGRESQL_PRISMA.md](docs/POSTGRESQL_PRISMA.md)
+- 上线部署、S3、健康检查、CI 说明：
+  [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)

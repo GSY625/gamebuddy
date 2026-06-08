@@ -1,6 +1,62 @@
-const API_BASE =
-  (import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env
-    ?.VITE_API_URL ?? 'http://localhost:3000';
+type ViteEnvShape = {
+  PROD?: boolean;
+  VITE_API_URL?: string;
+};
+
+const DEFAULT_LOCAL_API_BASE = 'http://localhost:3000';
+
+function isLocalHostname(hostname: string) {
+  const normalized = hostname.trim().toLowerCase();
+  return (
+    normalized === 'localhost' ||
+    normalized === '127.0.0.1' ||
+    normalized === '0.0.0.0' ||
+    normalized === '::1' ||
+    normalized.endsWith('.local')
+  );
+}
+
+function parsePublicUrl(name: string, value: string) {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${name} 必须是合法的绝对地址`);
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error(`${name} 必须以 http:// 或 https:// 开头`);
+  }
+
+  return url;
+}
+
+function normalizeUrl(value: string) {
+  return value.replace(/\/+$/, '');
+}
+
+function resolveApiBase() {
+  const env =
+    (import.meta as ImportMeta & { env?: ViteEnvShape }).env ?? {};
+  const configured = env.VITE_API_URL?.trim();
+
+  if (!env.PROD) {
+    return configured ? normalizeUrl(configured) : DEFAULT_LOCAL_API_BASE;
+  }
+
+  if (!configured) {
+    throw new Error('生产环境缺少 VITE_API_URL，前端已停止启动');
+  }
+
+  const url = parsePublicUrl('VITE_API_URL', configured);
+  if (isLocalHostname(url.hostname)) {
+    throw new Error('生产环境的 VITE_API_URL 不能指向 localhost 或本机地址');
+  }
+
+  return normalizeUrl(configured);
+}
+
+const API_BASE = resolveApiBase();
 
 export type TokenStorage = {
   get: () => string | null;
@@ -8,10 +64,16 @@ export type TokenStorage = {
   clear: () => void;
 };
 
+let inMemoryToken: string | null = null;
+
 let storage: TokenStorage = {
-  get: () => localStorage.getItem('gb_token'),
-  set: (t) => localStorage.setItem('gb_token', t),
-  clear: () => localStorage.removeItem('gb_token'),
+  get: () => inMemoryToken,
+  set: (token: string) => {
+    inMemoryToken = token;
+  },
+  clear: () => {
+    inMemoryToken = null;
+  },
 };
 
 export function configureAuth(s: TokenStorage) {
@@ -20,6 +82,14 @@ export function configureAuth(s: TokenStorage) {
 
 export function getToken() {
   return storage.get();
+}
+
+function storeAccessToken(token: string) {
+  storage.set(token);
+}
+
+function clearAccessToken() {
+  storage.clear();
 }
 
 export class ApiError extends Error {
@@ -66,22 +136,126 @@ function parseErrorPayload(err: {
   };
 }
 
+type RequestMeta = {
+  retryOn401?: boolean;
+  includeAuthHeader?: boolean;
+  allowRefresh?: boolean;
+};
+
+let refreshPromise: Promise<string | null> | null = null;
+
+function shouldAttemptRefresh(path: string, meta: RequestMeta) {
+  if (meta.retryOn401 === false || meta.allowRefresh === false) {
+    return false;
+  }
+
+  return ![
+    '/auth/captcha',
+    '/auth/send-code',
+    '/auth/register',
+    '/auth/login',
+    '/auth/reset-password',
+    '/auth/refresh',
+    '/auth/logout',
+  ].includes(path);
+}
+
+function buildHeaders(options: RequestInit, includeAuthHeader: boolean) {
+  const headers = new Headers(options.headers as HeadersInit | undefined);
+  const token = storage.get();
+
+  if (
+    options.body !== undefined &&
+    !(options.body instanceof FormData) &&
+    !headers.has('Content-Type')
+  ) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  if (includeAuthHeader && token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  return headers;
+}
+
+async function fetchWithSessionRetry(
+  path: string,
+  options: RequestInit = {},
+  meta: RequestMeta = {},
+) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    credentials: 'include',
+    headers: buildHeaders(options, meta.includeAuthHeader !== false),
+  });
+
+  if (response.status !== 401 || !shouldAttemptRefresh(path, meta)) {
+    return response;
+  }
+
+  const refreshedToken = await refreshAccessToken();
+  if (!refreshedToken) {
+    clearAccessToken();
+    return response;
+  }
+
+  return fetch(`${API_BASE}${path}`, {
+    ...options,
+    credentials: 'include',
+    headers: buildHeaders(options, meta.includeAuthHeader !== false),
+  });
+}
+
+async function refreshAccessToken() {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const response = await fetchWithSessionRetry(
+        '/auth/refresh',
+        { method: 'POST' },
+        {
+          retryOn401: false,
+          includeAuthHeader: false,
+          allowRefresh: false,
+        },
+      );
+
+      if (!response.ok) {
+        clearAccessToken();
+        return null;
+      }
+
+      const data = (await response.json()) as { accessToken: string };
+      storeAccessToken(data.accessToken);
+      return data.accessToken;
+    } catch {
+      clearAccessToken();
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
+  meta: RequestMeta = {},
 ): Promise<T> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string>),
-  };
-  const token = storage.get();
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const res = await fetchWithSessionRetry(path, options, meta);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }));
     const { text, retryAfterSeconds } = parseErrorPayload(err);
-    throw new ApiError(text || '请求失败', retryAfterSeconds);
+    throw new ApiError(text || 'Request failed', retryAfterSeconds);
+  }
+  if (res.status === 204) {
+    return undefined as T;
   }
   return res.json() as Promise<T>;
 }
@@ -90,16 +264,56 @@ export const api = {
   getCaptcha: () => request<{ captchaId: string; image: string }>('/auth/captcha'),
   sendCode: (body: { email: string; captchaId: string; captchaCode: string }) =>
     request('/auth/send-code', { method: 'POST', body: JSON.stringify(body) }),
-  register: (body: { email: string; password: string; nickname: string; code: string }) =>
-    request<{ accessToken: string; user: { id: string; email: string; nickname: string } }>(
-      '/auth/register',
-      { method: 'POST', body: JSON.stringify(body) },
-    ),
-  login: (body: { email: string; password: string }) =>
-    request<{ accessToken: string; user: { id: string; email: string; nickname: string } }>(
-      '/auth/login',
-      { method: 'POST', body: JSON.stringify(body) },
-    ),
+  register: async (body: {
+    email: string;
+    password: string;
+    nickname: string;
+    code: string;
+  }) => {
+    const result = await request<{
+      accessToken: string;
+      user: { id: string; email: string; nickname: string; role?: string };
+    }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    storeAccessToken(result.accessToken);
+    return result;
+  },
+  login: async (body: { email: string; password: string }) => {
+    const result = await request<{
+      accessToken: string;
+      user: { id: string; email: string; nickname: string; role?: string };
+    }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    storeAccessToken(result.accessToken);
+    return result;
+  },
+  refreshSession: async () => {
+    const result = await request<{
+      accessToken: string;
+      user: { id: string; email: string; nickname: string; role?: string };
+    }>(
+      '/auth/refresh',
+      { method: 'POST' },
+      { retryOn401: false, includeAuthHeader: false, allowRefresh: false },
+    );
+    storeAccessToken(result.accessToken);
+    return result;
+  },
+  logout: async () => {
+    try {
+      await request<{ message: string }>(
+        '/auth/logout',
+        { method: 'POST' },
+        { retryOn401: false, includeAuthHeader: false, allowRefresh: false },
+      );
+    } finally {
+      clearAccessToken();
+    }
+  },
   resetPassword: (body: { email: string; code: string; password: string }) =>
     request<{ message: string }>('/auth/reset-password', {
       method: 'POST',
@@ -195,13 +409,11 @@ export const api = {
   uploadImage: async (file: File) => {
     const fd = new FormData();
     fd.append('file', file);
-    const token = storage.get();
-    const res = await fetch(`${API_BASE}/upload/image`, {
+    const res = await fetchWithSessionRetry('/upload/image', {
       method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: fd,
     });
-    if (!res.ok) throw new Error('上传失败');
+    if (!res.ok) throw new Error('Upload failed');
     return res.json() as Promise<{ url: string }>;
   },
   createLfg: (body: Record<string, unknown>) =>

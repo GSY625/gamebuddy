@@ -17,6 +17,7 @@ import {
 } from '../visibility/visibility.service';
 import { ChatGateway } from '../chat/chat.gateway';
 import { getNicknameCooldown } from './nickname-cooldown';
+import { AuthSessionService } from '../auth/auth-session.service';
 
 @Injectable()
 export class UsersService {
@@ -24,6 +25,7 @@ export class UsersService {
     private prisma: PrismaService,
     private redis: RedisService,
     private visibility: VisibilityService,
+    private authSessions: AuthSessionService,
     @Inject(forwardRef(() => ChatGateway))
     private chatGateway: ChatGateway,
   ) {}
@@ -67,11 +69,7 @@ export class UsersService {
   async setVisibility(userId: string, status: VisibilityStatus) {
     await this.visibility.set(userId, status);
     const connected = (await this.redis.get(`presence:${userId}`)) === '1';
-    this.chatGateway.server.emit('presence:update', {
-      userId,
-      online: connected,
-      visibility: status,
-    });
+    await this.chatGateway.emitPresenceUpdate(userId, connected, status);
     return { visibilityStatus: status };
   }
 
@@ -103,8 +101,12 @@ export class UsersService {
   async changePassword(userId: string, dto: ChangePasswordDto) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException();
+
     const ok = await bcrypt.compare(dto.currentPassword, user.passwordHash);
-    if (!ok) throw new UnauthorizedException('当前密码不正确');
+    if (!ok) {
+      throw new UnauthorizedException('当前密码不正确');
+    }
+
     const sameAsCurrent = await bcrypt.compare(
       dto.newPassword,
       user.passwordHash,
@@ -112,12 +114,15 @@ export class UsersService {
     if (sameAsCurrent) {
       throw new BadRequestException('新密码不能与当前密码相同');
     }
+
     const passwordHash = await bcrypt.hash(dto.newPassword, 10);
     await this.prisma.user.update({
       where: { id: userId },
       data: { passwordHash },
     });
-    return { message: '密码已修改' };
+    await this.authSessions.revokeAllUserSessions(userId);
+
+    return { message: '密码已修改，请重新登录' };
   }
 
   async updateMe(userId: string, dto: UpdateUserDto) {
@@ -168,6 +173,7 @@ export class UsersService {
   async findById(id: string, viewerId?: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException();
+
     if (viewerId) {
       const blocked = await this.prisma.block.findFirst({
         where: {
@@ -179,6 +185,7 @@ export class UsersService {
       });
       if (blocked) throw new NotFoundException();
     }
+
     const connected = (await this.redis.get(`presence:${id}`)) === '1';
     const visible = await this.visibility.isVisibleToOthers(id);
     return {

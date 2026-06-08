@@ -10,8 +10,7 @@ import { ChatEmojiPicker } from '../components/ChatEmojiPicker';
 import { UserAvatar } from '../components/UserAvatar';
 import { UserAvatarLink } from '../components/UserAvatarLink';
 import { useAuth } from '../context/AuthContext';
-
-const WS_URL = import.meta.env.VITE_WS_URL ?? 'http://localhost:3000';
+import { WS_URL } from '../utils/runtimeEnv';
 
 type Conversation = {
   threadId: string;

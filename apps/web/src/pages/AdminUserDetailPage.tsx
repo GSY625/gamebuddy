@@ -4,6 +4,11 @@ import { api } from '@gamebuddy/api-client';
 import { PageHeader } from '../components/PageHeader';
 import { AdminNav } from '../components/AdminNav';
 import { ThemeToast } from '../components/ThemeToast';
+import {
+  formatAdminActionLabel,
+  formatAdminActionNote,
+  formatRestrictionTypeLabel,
+} from '../utils/adminActionLog';
 
 type UserDetail = {
   id: string;
@@ -140,7 +145,10 @@ export default function AdminUserDetailPage() {
   return (
     <div className="page-wrap">
       <ThemeToast message={toast} show={Boolean(toast)} onClose={() => setToast('')} />
-      <PageHeader title="用户详情" subtitle="结合举报记录、封禁状态和管理员日志判断是否需要进一步处理。" />
+      <PageHeader
+        title="用户详情"
+        subtitle="结合举报记录、封禁状态和管理员日志判断是否需要进一步处理。"
+      />
       <AdminNav />
 
       <div className="admin-detail-grid">
@@ -154,10 +162,22 @@ export default function AdminUserDetailPage() {
               <span className="admin-badge neutral">{data.role}</span>
             </div>
           </div>
-          <p><strong>昵称：</strong>{data.nickname}</p>
-          <p><strong>邮箱：</strong>{data.email}</p>
-          <p><strong>简介：</strong>{data.bio || '无'}</p>
-          <p><strong>注册时间：</strong>{new Date(data.createdAt).toLocaleString('zh-CN')}</p>
+          <p>
+            <strong>昵称：</strong>
+            {data.nickname}
+          </p>
+          <p>
+            <strong>邮箱：</strong>
+            {data.email}
+          </p>
+          <p>
+            <strong>简介：</strong>
+            {data.bio || '无'}
+          </p>
+          <p>
+            <strong>注册时间：</strong>
+            {new Date(data.createdAt).toLocaleString('zh-CN')}
+          </p>
           <p className="muted small">
             被举报 {data._count.reportsAgainst} 次 / 发起举报 {data._count.reportsFiled} 次
           </p>
@@ -228,9 +248,7 @@ export default function AdminUserDetailPage() {
             {data.restrictions.map((item) => (
               <li key={item.id} className="admin-simple-item">
                 <div>
-                  <strong>
-                    {RESTRICTION_ITEMS.find((x) => x.type === item.type)?.label || item.type}
-                  </strong>
+                  <strong>{formatRestrictionTypeLabel(item.type)}</strong>
                   {item.note && <p className="muted small">{item.note}</p>}
                 </div>
                 <time className="muted small">
@@ -301,20 +319,24 @@ export default function AdminUserDetailPage() {
           <p className="muted small">暂无相关操作</p>
         ) : (
           <ul className="admin-simple-list">
-            {data.actionLogs.map((item) => (
-              <li key={item.id} className="admin-simple-item">
-                <div>
-                  <strong>{item.action}</strong>
-                  <p className="muted small">
-                    操作者：{item.actor.nickname} / {item.actor.role}
-                  </p>
-                  {item.note && <p className="muted small">{item.note}</p>}
-                </div>
-                <time className="muted small">
-                  {new Date(item.createdAt).toLocaleString('zh-CN')}
-                </time>
-              </li>
-            ))}
+            {data.actionLogs.map((item) => {
+              const formattedNote = formatAdminActionNote(item.note);
+
+              return (
+                <li key={item.id} className="admin-simple-item">
+                  <div>
+                    <strong>{formatAdminActionLabel(item.action)}</strong>
+                    <p className="muted small">
+                      操作者：{item.actor.nickname} / {item.actor.role}
+                    </p>
+                    {formattedNote && <p className="muted small">{formattedNote}</p>}
+                  </div>
+                  <time className="muted small">
+                    {new Date(item.createdAt).toLocaleString('zh-CN')}
+                  </time>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

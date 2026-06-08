@@ -1912,6 +1912,54 @@ select option {
   z-index: 1;
 }
 
+.chat-settings,
+.chat-members,
+.messages,
+.dm-messages {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168, 85, 247, 0.7) rgba(16, 12, 27, 0.9);
+}
+
+.chat-settings::-webkit-scrollbar,
+.chat-members::-webkit-scrollbar,
+.messages::-webkit-scrollbar,
+.dm-messages::-webkit-scrollbar {
+  width: 10px;
+}
+
+.chat-settings::-webkit-scrollbar-track,
+.chat-members::-webkit-scrollbar-track,
+.messages::-webkit-scrollbar-track,
+.dm-messages::-webkit-scrollbar-track {
+  background: rgba(16, 12, 27, 0.92);
+  border-radius: 999px;
+}
+
+.chat-settings::-webkit-scrollbar-thumb,
+.chat-members::-webkit-scrollbar-thumb,
+.messages::-webkit-scrollbar-thumb,
+.dm-messages::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    180deg,
+    rgba(192, 132, 252, 0.95),
+    rgba(147, 51, 234, 0.9)
+  );
+  border: 2px solid rgba(16, 12, 27, 0.92);
+  border-radius: 999px;
+  box-shadow: 0 0 12px rgba(147, 51, 234, 0.28);
+}
+
+.chat-settings::-webkit-scrollbar-thumb:hover,
+.chat-members::-webkit-scrollbar-thumb:hover,
+.messages::-webkit-scrollbar-thumb:hover,
+.dm-messages::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    180deg,
+    rgba(216, 180, 254, 0.98),
+    rgba(168, 85, 247, 0.95)
+  );
+}
+
 .chat-settings h2,
 .chat-members h2 {
   margin: 0 0 0.5rem;
@@ -2003,6 +2051,10 @@ select option {
 .room-name-display {
   margin: 0;
   font-weight: 700;
+}
+
+.chat-member-limit-input {
+  letter-spacing: 0.01em;
 }
 
 .chat-header {

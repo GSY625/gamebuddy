@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Controller,
   Post,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -13,6 +14,9 @@ import {
   SupportedImageExtension,
   UploadService,
 } from './upload.service';
+import { UploadQuotaService } from './upload-quota.service';
+import { HttpRateLimitGuard } from '../rate-limit/rate-limit.guard';
+import { RateLimit } from '../rate-limit/rate-limit.decorator';
 
 const ALLOWED_IMAGE_MIME_TYPES = new Set([
   'image/jpeg',
@@ -75,9 +79,20 @@ function detectImageType(
 @Controller('upload')
 @UseGuards(JwtAuthGuard)
 export class UploadController {
-  constructor(private upload: UploadService) {}
+  constructor(
+    private upload: UploadService,
+    private uploadQuota: UploadQuotaService,
+  ) {}
 
   @Post('image')
+  @UseGuards(HttpRateLimitGuard)
+  @RateLimit({
+    bucket: 'upload-image',
+    limit: 10,
+    windowSeconds: 60,
+    keyBy: 'user-or-ip',
+    message: '上传图片过于频繁，请稍后再试',
+  })
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -96,7 +111,10 @@ export class UploadController {
       },
     }),
   )
-  async uploadImage(@UploadedFile() file: Express.Multer.File) {
+  async uploadImage(
+    @Req() req: { user: { id: string } },
+    @UploadedFile() file: Express.Multer.File,
+  ) {
     if (!file) {
       throw new BadRequestException('未上传文件');
     }
@@ -110,7 +128,9 @@ export class UploadController {
       throw new BadRequestException('文件类型与图片内容不匹配');
     }
 
+    await this.uploadQuota.assertCanUpload(req.user.id);
     const filename = await this.upload.saveImage(file.buffer, detected.ext);
+    await this.uploadQuota.recordUpload(req.user.id);
     return { url: this.upload.buildPublicUrl(filename) };
   }
 }

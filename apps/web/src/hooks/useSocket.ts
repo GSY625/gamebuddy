@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { getToken } from '@gamebuddy/api-client';
-
-const WS_URL = import.meta.env.VITE_WS_URL ?? 'http://localhost:3000';
+import { WS_URL } from '../utils/runtimeEnv';
 
 export function useSocket(enabled: boolean) {
   const socketRef = useRef<Socket | null>(null);

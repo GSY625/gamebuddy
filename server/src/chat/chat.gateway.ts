@@ -1,31 +1,88 @@
-import { Inject, forwardRef } from '@nestjs/common';
+import {
+  Inject,
+  OnModuleDestroy,
+  forwardRef,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import {
   ConnectedSocket,
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { randomUUID } from 'crypto';
 import { Server, Socket } from 'socket.io';
-import { JwtService } from '@nestjs/jwt';
-import { ChatService } from './chat.service';
-import { RedisService } from '../redis/redis.service';
-import { VisibilityService } from '../visibility/visibility.service';
+import { AuthSessionService } from '../auth/auth-session.service';
+import { DirectMessagesService } from '../direct-messages/direct-messages.service';
+import { BusinessLogService } from '../logging/business-log.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { DirectMessagesService } from '../direct-messages/direct-messages.service';
+import { RateLimitService } from '../rate-limit/rate-limit.service';
+import { RedisService } from '../redis/redis.service';
+import { VisibilityService } from '../visibility/visibility.service';
+import { ChatService } from './chat.service';
 
 const PRESENCE_TTL_SECONDS = 330;
 const PRESENCE_REFRESH_MS = 60_000;
+const DUPLICATE_MESSAGE_WINDOW_SECONDS = 15;
+const SOCKET_CLUSTER_CHANNEL = 'socket:cluster:broadcast';
+
+type ClusterSocketEvent =
+  | {
+      sourceInstanceId: string;
+      target: 'global';
+      event: string;
+      payload: unknown;
+    }
+  | {
+      sourceInstanceId: string;
+      target: 'user';
+      userId: string;
+      event: string;
+      payload: unknown;
+    }
+  | {
+      sourceInstanceId: string;
+      target: 'room';
+      roomId: string;
+      event: string;
+      payload: unknown;
+      exceptSocketId?: string;
+    }
+  | {
+      sourceInstanceId: string;
+      target: 'dm';
+      threadId: string;
+      event: string;
+      payload: unknown;
+    }
+  | {
+      sourceInstanceId: string;
+      target: 'remove-user-room';
+      userId: string;
+      roomId: string;
+      payload: { partyId: string; message: string };
+    };
 
 @WebSocketGateway({
   cors: { origin: process.env.CORS_ORIGIN?.split(',') ?? true },
 })
-export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ChatGateway
+  implements
+    OnGatewayInit,
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnModuleDestroy
+{
   @WebSocketServer()
   server!: Server;
+
+  private readonly instanceId = randomUUID();
+  private clusterUnsubscribe?: () => Promise<void> | void;
 
   constructor(
     private jwt: JwtService,
@@ -34,9 +91,37 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private visibility: VisibilityService,
     private prisma: PrismaService,
     private directMessages: DirectMessagesService,
+    private rateLimit: RateLimitService,
+    private businessLog: BusinessLogService,
+    private authSessions: AuthSessionService,
     @Inject(forwardRef(() => NotificationsService))
     private notifications: NotificationsService,
   ) {}
+
+  async afterInit() {
+    this.clusterUnsubscribe = await this.redis.subscribe(
+      SOCKET_CLUSTER_CHANNEL,
+      async (rawMessage) => {
+        try {
+          const event = JSON.parse(rawMessage) as ClusterSocketEvent;
+          if (event.sourceInstanceId === this.instanceId) {
+            return;
+          }
+          this.applyClusterEvent(event);
+        } catch (error) {
+          this.businessLog.warn('socket.cluster_sync.invalid_message', {
+            rawMessage,
+            error:
+              error instanceof Error ? error.message : 'invalid-cluster-event',
+          });
+        }
+      },
+    );
+  }
+
+  async onModuleDestroy() {
+    await this.clusterUnsubscribe?.();
+  }
 
   private presenceKey(userId: string) {
     return `presence:${userId}`;
@@ -46,16 +131,130 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return `presence:connections:${userId}`;
   }
 
+  private async publishClusterEvent(event: ClusterSocketEvent) {
+    await this.redis.publish(SOCKET_CLUSTER_CHANNEL, JSON.stringify(event));
+  }
+
+  private applyClusterEvent(event: ClusterSocketEvent) {
+    switch (event.target) {
+      case 'global':
+        this.server.emit(event.event, event.payload);
+        return;
+      case 'user':
+        this.server.to(`user:${event.userId}`).emit(event.event, event.payload);
+        return;
+      case 'room':
+        if (event.exceptSocketId) {
+          this.server
+            .except(event.exceptSocketId)
+            .to(`room:${event.roomId}`)
+            .emit(event.event, event.payload);
+          return;
+        }
+        this.server.to(`room:${event.roomId}`).emit(event.event, event.payload);
+        return;
+      case 'dm':
+        this.server.to(`dm:${event.threadId}`).emit(event.event, event.payload);
+        return;
+      case 'remove-user-room':
+        this.server.in(`user:${event.userId}`).socketsLeave(`room:${event.roomId}`);
+        this.server.to(`user:${event.userId}`).emit('room:removed', {
+          roomId: event.roomId,
+          ...event.payload,
+        });
+        return;
+    }
+  }
+
+  private async emitGlobalEvent(event: string, payload: unknown) {
+    const clusterEvent: ClusterSocketEvent = {
+      sourceInstanceId: this.instanceId,
+      target: 'global',
+      event,
+      payload,
+    };
+    this.applyClusterEvent(clusterEvent);
+    await this.publishClusterEvent(clusterEvent);
+  }
+
+  private async emitRoomEvent(
+    roomId: string,
+    event: string,
+    payload: unknown,
+    exceptSocketId?: string,
+  ) {
+    const clusterEvent: ClusterSocketEvent = {
+      sourceInstanceId: this.instanceId,
+      target: 'room',
+      roomId,
+      event,
+      payload,
+      exceptSocketId,
+    };
+    this.applyClusterEvent(clusterEvent);
+    await this.publishClusterEvent(clusterEvent);
+  }
+
+  private async emitDirectMessageEvent(
+    threadId: string,
+    event: string,
+    payload: unknown,
+  ) {
+    const clusterEvent: ClusterSocketEvent = {
+      sourceInstanceId: this.instanceId,
+      target: 'dm',
+      threadId,
+      event,
+      payload,
+    };
+    this.applyClusterEvent(clusterEvent);
+    await this.publishClusterEvent(clusterEvent);
+  }
+
+  async emitPresenceUpdate(
+    userId: string,
+    online: boolean,
+    visibility?: string,
+  ) {
+    await this.emitGlobalEvent('presence:update', {
+      userId,
+      online,
+      ...(visibility ? { visibility } : {}),
+    });
+  }
+
   private async markUserOnline(userId: string) {
     await this.redis.set(this.presenceKey(userId), '1', 'EX', PRESENCE_TTL_SECONDS);
   }
 
   private async ensureActiveUser(client: Socket) {
     const userId = client.data.userId as string | undefined;
+    const sessionId = client.data.sessionId as string | undefined;
     if (!userId) {
       client.disconnect();
       return null;
     }
+
+    if (!sessionId) {
+      client.emit('user:notify', {
+        title: '登录状态已失效',
+        message: '请重新登录后再继续操作',
+      });
+      client.disconnect();
+      return null;
+    }
+
+    try {
+      await this.authSessions.assertAccessSessionValid(sessionId, userId);
+    } catch {
+      client.emit('user:notify', {
+        title: '登录状态已失效',
+        message: '请重新登录后再继续操作',
+      });
+      client.disconnect();
+      return null;
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, isBanned: true },
@@ -92,9 +291,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.disconnect();
         return;
       }
-      const payload = this.jwt.verify<{ sub: string }>(token, {
-        secret: process.env.JWT_SECRET ?? 'dev-secret',
-      });
+      const payload = this.jwt.verify<{
+        sub: string;
+        sid?: string;
+        type?: 'access' | 'refresh';
+      }>(token);
+      if (!payload.sid || payload.type !== 'access') {
+        client.disconnect();
+        return;
+      }
+
+      await this.authSessions.assertAccessSessionValid(payload.sid, payload.sub);
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
         select: { id: true, isBanned: true },
@@ -103,17 +310,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.disconnect();
         return;
       }
+
       client.data.userId = payload.sub;
+      client.data.sessionId = payload.sid;
       await this.redis.incr(this.presenceConnectionsKey(payload.sub));
       await this.markUserOnline(payload.sub);
       this.startPresenceRefresh(client, payload.sub);
       client.join(`user:${payload.sub}`);
+
       const visibility = await this.visibility.get(payload.sub);
-      this.server.emit('presence:update', {
-        userId: payload.sub,
-        online: true,
-        visibility,
-      });
+      await this.emitPresenceUpdate(payload.sub, true, visibility);
     } catch {
       client.disconnect();
     }
@@ -121,28 +327,118 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleDisconnect(client: Socket) {
     const userId = client.data.userId as string | undefined;
-    if (userId) {
-      this.stopPresenceRefresh(client);
-      const remaining = await this.redis.decr(this.presenceConnectionsKey(userId));
-      if (remaining > 0) {
-        await this.markUserOnline(userId);
-        return;
+    if (!userId) {
+      return;
+    }
+
+    this.stopPresenceRefresh(client);
+    const remaining = await this.redis.decr(this.presenceConnectionsKey(userId));
+    if (remaining > 0) {
+      await this.markUserOnline(userId);
+      return;
+    }
+
+    await this.redis.del(this.presenceKey(userId));
+    await this.emitPresenceUpdate(userId, false);
+  }
+
+  private async emitUnreadToRoomMembers(roomId: string, excludeUserId?: string) {
+    const members = await this.chat.getRoomMembers(roomId);
+    for (const member of members) {
+      if (member.userId === excludeUserId) {
+        continue;
       }
-      await this.redis.del(this.presenceKey(userId));
-      this.server.emit('presence:update', { userId, online: false });
+      const count = await this.chat.getUnreadCount(roomId, member.userId);
+      await this.emitToUser(member.userId, 'room:unread', { roomId, count });
     }
   }
 
-  private async emitUnreadToRoomMembers(
-    roomId: string,
-    excludeUserId?: string,
-  ) {
-    const members = await this.chat.getRoomMembers(roomId);
-    for (const m of members) {
-      if (m.userId === excludeUserId) continue;
-      const count = await this.chat.getUnreadCount(roomId, m.userId);
-      this.emitToUser(m.userId, 'room:unread', { roomId, count });
+  private emitRateLimitNotice(client: Socket, message: string) {
+    client.emit('user:notify', {
+      title: '操作过快',
+      message,
+    });
+  }
+
+  private getRateLimitMessage(error: unknown, fallback: string) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'getResponse' in error &&
+      typeof error.getResponse === 'function'
+    ) {
+      const response = error.getResponse();
+      if (response && typeof response === 'object' && !Array.isArray(response)) {
+        const message = (response as { message?: unknown }).message;
+        if (typeof message === 'string') {
+          return message;
+        }
+        if (Array.isArray(message) && typeof message[0] === 'string') {
+          return message[0];
+        }
+      }
     }
+
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+
+    return fallback;
+  }
+
+  private normalizeDuplicateMessage(content: string) {
+    return content.trim().replace(/\s+/g, ' ').toLowerCase();
+  }
+
+  private duplicateMessageKey(
+    scope: 'room' | 'dm',
+    targetId: string,
+    userId: string,
+  ) {
+    return `message-duplicate:${scope}:${targetId}:${userId}`;
+  }
+
+  private async assertNotDuplicateMessage(
+    scope: 'room' | 'dm',
+    targetId: string,
+    userId: string,
+    content: string,
+  ) {
+    const normalized = this.normalizeDuplicateMessage(content);
+    if (!normalized) {
+      return;
+    }
+
+    const key = this.duplicateMessageKey(scope, targetId, userId);
+    const previous = await this.redis.get(key);
+    if (previous === normalized) {
+      this.businessLog.warn('chat.duplicate_message.blocked', {
+        scope,
+        targetId,
+        userId,
+        windowSeconds: DUPLICATE_MESSAGE_WINDOW_SECONDS,
+      });
+      throw new Error('请勿短时间内重复发送相同内容');
+    }
+  }
+
+  private async rememberMessageFingerprint(
+    scope: 'room' | 'dm',
+    targetId: string,
+    userId: string,
+    content: string,
+  ) {
+    const normalized = this.normalizeDuplicateMessage(content);
+    if (!normalized) {
+      return;
+    }
+
+    await this.redis.set(
+      this.duplicateMessageKey(scope, targetId, userId),
+      normalized,
+      'EX',
+      DUPLICATE_MESSAGE_WINDOW_SECONDS,
+    );
   }
 
   @SubscribeMessage('room:join')
@@ -152,6 +448,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const userId = await this.ensureActiveUser(client);
     if (!userId) return { ok: false };
+
     await this.chat.getMessages(data.roomId, userId);
     client.join(`room:${data.roomId}`);
     await this.emitUnreadToRoomMembers(data.roomId);
@@ -165,22 +462,59 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const userId = await this.ensureActiveUser(client);
     if (!userId) return { ok: false };
+
+    try {
+      await this.rateLimit.consume(
+        `user:${userId}`,
+        {
+          bucket: 'ws-room-message',
+          limit: 8,
+          windowSeconds: 5,
+          message: '聊天室发言过于频繁，请稍后再试',
+        },
+        {
+          channel: 'ws',
+          event: 'room:message',
+          userId,
+        },
+      );
+    } catch (error) {
+      const message = this.getRateLimitMessage(
+        error,
+        '聊天室发言过于频繁，请稍后再试',
+      );
+      this.emitRateLimitNotice(client, message);
+      return { ok: false, rateLimited: true };
+    }
+
+    try {
+      await this.assertNotDuplicateMessage('room', data.roomId, userId, data.content);
+    } catch (error) {
+      const message = this.getRateLimitMessage(
+        error,
+        '请勿短时间内重复发送相同内容',
+      );
+      this.emitRateLimitNotice(client, message);
+      return { ok: false, duplicateBlocked: true };
+    }
+
     const { message, mentioned, senderNickname } = await this.chat.sendMessage(
       data.roomId,
       userId,
       data.content,
     );
-    this.server.to(`room:${data.roomId}`).emit('room:message', message);
+    await this.rememberMessageFingerprint('room', data.roomId, userId, data.content);
+    await this.emitRoomEvent(data.roomId, 'room:message', message);
 
-    for (const m of mentioned) {
-      await this.notifications.create(m.userId, {
+    for (const member of mentioned) {
+      await this.notifications.create(member.userId, {
         type: 'chat_mention',
-        title: '有人@了你',
+        title: '有人 @ 你',
         message: `${senderNickname} 在聊天室提到了你`,
         link: `/chat/${data.roomId}`,
         refId: message.id,
       });
-      this.emitToUser(m.userId, 'room:mention', {
+      await this.emitToUser(member.userId, 'room:mention', {
         roomId: data.roomId,
         messageId: message.id,
         senderNickname,
@@ -199,7 +533,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const userId = await this.ensureActiveUser(client);
     if (!userId) return { ok: false };
-    client.to(`room:${data.roomId}`).emit('room:typing', { userId, roomId: data.roomId });
+
+    await this.emitRoomEvent(
+      data.roomId,
+      'room:typing',
+      { userId, roomId: data.roomId },
+      client.id,
+    );
+    return { ok: true };
   }
 
   @SubscribeMessage('dm:join')
@@ -209,6 +550,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const userId = await this.ensureActiveUser(client);
     if (!userId) return { ok: false };
+
     await this.directMessages.assertThreadParticipant(data.threadId, userId);
     client.join(`dm:${data.threadId}`);
     return { ok: true };
@@ -221,25 +563,62 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const senderId = await this.ensureActiveUser(client);
     if (!senderId) return { ok: false };
+
+    try {
+      await this.rateLimit.consume(
+        `user:${senderId}`,
+        {
+          bucket: 'ws-direct-message',
+          limit: 6,
+          windowSeconds: 5,
+          message: '私信发送过于频繁，请稍后再试',
+        },
+        {
+          channel: 'ws',
+          event: 'dm:message',
+          userId: senderId,
+        },
+      );
+    } catch (error) {
+      const message = this.getRateLimitMessage(
+        error,
+        '私信发送过于频繁，请稍后再试',
+      );
+      this.emitRateLimitNotice(client, message);
+      return { ok: false, rateLimited: true };
+    }
+
+    try {
+      await this.assertNotDuplicateMessage('dm', data.receiverId, senderId, data.content);
+    } catch (error) {
+      const message = this.getRateLimitMessage(
+        error,
+        '请勿短时间内重复发送相同内容',
+      );
+      this.emitRateLimitNotice(client, message);
+      return { ok: false, duplicateBlocked: true };
+    }
+
     const result = await this.directMessages.sendMessage(
       senderId,
       data.receiverId,
       data.content,
     );
+    await this.rememberMessageFingerprint('dm', data.receiverId, senderId, data.content);
 
-    this.server.to(`dm:${result.threadId}`).emit('dm:message', {
+    await this.emitDirectMessageEvent(result.threadId, 'dm:message', {
       threadId: result.threadId,
       message: result.message,
     });
-    this.emitToUser(senderId, 'dm:conversation:update', {
+    await this.emitToUser(senderId, 'dm:conversation:update', {
       threadId: result.threadId,
       friendId: data.receiverId,
     });
-    this.emitToUser(data.receiverId, 'dm:conversation:update', {
+    await this.emitToUser(data.receiverId, 'dm:conversation:update', {
       threadId: result.threadId,
       friendId: senderId,
     });
-    this.emitToUser(data.receiverId, 'user:notify', {
+    await this.emitToUser(data.receiverId, 'user:notify', {
       title: '新的好友私信',
       message: `${result.senderNickname} 给你发来一条私信`,
       friendId: senderId,
@@ -252,31 +631,46 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     };
   }
 
-  emitToUser(userId: string, event: string, payload: unknown) {
-    this.server.to(`user:${userId}`).emit(event, payload);
+  async emitToUser(userId: string, event: string, payload: unknown) {
+    const clusterEvent: ClusterSocketEvent = {
+      sourceInstanceId: this.instanceId,
+      target: 'user',
+      userId,
+      event,
+      payload,
+    };
+    this.applyClusterEvent(clusterEvent);
+    await this.publishClusterEvent(clusterEvent);
   }
 
-  emitRoomMessage(roomId: string, msg: unknown) {
-    this.server.to(`room:${roomId}`).emit('room:message', msg);
+  emitRoomMessage(roomId: string, payload: unknown) {
+    return this.emitRoomEvent(roomId, 'room:message', payload);
   }
 
-  emitRoomDissolved(
+  async emitRoomDissolved(
     roomId: string,
     memberIds: string[],
     payload: { partyId: string; message: string },
   ) {
-    this.server.to(`room:${roomId}`).emit('room:dissolved', payload);
+    await this.emitRoomEvent(roomId, 'room:dissolved', payload);
     for (const userId of memberIds) {
-      this.emitToUser(userId, 'room:dissolved', { roomId, ...payload });
+      await this.emitToUser(userId, 'room:dissolved', { roomId, ...payload });
     }
   }
 
-  removeUserFromRoom(
+  async removeUserFromRoom(
     userId: string,
     roomId: string,
     payload: { partyId: string; message: string },
   ) {
-    this.server.in(`user:${userId}`).socketsLeave(`room:${roomId}`);
-    this.emitToUser(userId, 'room:removed', { roomId, ...payload });
+    const clusterEvent: ClusterSocketEvent = {
+      sourceInstanceId: this.instanceId,
+      target: 'remove-user-room',
+      userId,
+      roomId,
+      payload,
+    };
+    this.applyClusterEvent(clusterEvent);
+    await this.publishClusterEvent(clusterEvent);
   }
 }

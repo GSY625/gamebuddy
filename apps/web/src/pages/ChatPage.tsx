@@ -14,8 +14,7 @@ import {
   ChatMentionPicker,
   renderMessageContent,
 } from '../components/ChatMentionPicker';
-
-const WS_URL = import.meta.env.VITE_WS_URL ?? 'http://localhost:3000';
+import { WS_URL } from '../utils/runtimeEnv';
 
 type Msg = {
   id: string;
@@ -534,13 +533,15 @@ export default function ChatPage() {
             <>
               <p className="muted small">留空表示不限制，范围 2 - 99 人</p>
               <input
-                type="number"
-                min={2}
-                max={99}
-                step={1}
+                className="chat-member-limit-input"
+                type="text"
+                inputMode="numeric"
+                maxLength={2}
                 placeholder="不限制"
                 value={memberLimitEdit}
-                onChange={(e) => setMemberLimitEdit(e.target.value)}
+                onChange={(e) =>
+                  setMemberLimitEdit(e.target.value.replace(/\D/g, '').slice(0, 2))
+                }
               />
               <button
                 type="button"
