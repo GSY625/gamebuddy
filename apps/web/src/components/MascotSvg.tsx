@@ -6,6 +6,7 @@ type Props = {
   variant?: Variant;
   className?: string;
   style?: CSSProperties;
+  brandText?: string;
   lookAt?: {
     x: number;
     y: number;
@@ -21,6 +22,7 @@ export function MascotSvg({
   variant = 'wave',
   className = '',
   style,
+  brandText,
   lookAt,
   privacyMode = false,
 }: Props) {
@@ -57,6 +59,17 @@ export function MascotSvg({
           <stop offset="0%" stopColor="#c084fc" />
           <stop offset="100%" stopColor="#a78bfa" />
         </linearGradient>
+        <linearGradient id="mascotBrandBadge" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#7c3aed" />
+          <stop offset="100%" stopColor="#c084fc" />
+        </linearGradient>
+        <filter id="mascotBrandGlow" x="-40%" y="-80%" width="180%" height="260%">
+          <feGaussianBlur stdDeviation="1.4" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
       {accessory}
       <ellipse cx="28" cy="32" rx="10" ry="14" fill="url(#mascotEar)" />
@@ -126,6 +139,44 @@ export function MascotSvg({
       {variant === 'wave' && !privacyMode && (
         <g transform={`translate(78,48) rotate(${lookX * 3 - 10})`}>
           <ellipse cx="0" cy="0" rx="6" ry="8" fill="url(#mascotBody)" />
+        </g>
+      )}
+      {brandText && (
+        <g
+          transform={`translate(${lookX * 0.8}, 0)`}
+          opacity={privacyMode ? 0.92 : 1}
+        >
+          <ellipse
+            cx="50"
+            cy="72"
+            rx="15.5"
+            ry="6.2"
+            fill="#140f20"
+            opacity="0.22"
+          />
+          <rect
+            x="34"
+            y="66"
+            width="32"
+            height="11.5"
+            rx="5.75"
+            fill="url(#mascotBrandBadge)"
+            stroke="rgba(255,255,255,0.32)"
+            strokeWidth="0.9"
+            filter="url(#mascotBrandGlow)"
+          />
+          <text
+            x="50"
+            y="73.6"
+            textAnchor="middle"
+            fontSize="7.2"
+            fontWeight="800"
+            letterSpacing="0.45"
+            fill="#fff8ff"
+            style={{ fontFamily: '"Nunito", "Microsoft YaHei", sans-serif' }}
+          >
+            {brandText}
+          </text>
         </g>
       )}
       <rect x="38" y="78" width="24" height="14" rx="4" fill="#7c3aed" opacity="0.85" />

@@ -144,6 +144,29 @@ export function getS3ForcePathStyle() {
   return isTruthy(process.env.S3_FORCE_PATH_STYLE);
 }
 
+export function getSmtpPort() {
+  const raw = process.env.SMTP_PORT?.trim();
+  if (!raw) {
+    return 587;
+  }
+
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error('SMTP_PORT 必须是 1-65535 之间的整数');
+  }
+
+  return port;
+}
+
+export function getSmtpSecure() {
+  const configured = process.env.SMTP_SECURE?.trim();
+  if (configured) {
+    return isTruthy(configured);
+  }
+
+  return getSmtpPort() === 465;
+}
+
 export function validateServerRuntimeEnv() {
   if (!isProduction()) {
     return;
@@ -200,6 +223,34 @@ export function validateServerRuntimeEnv() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       errors.push(`ADMIN_EMAILS 中存在非法邮箱：${email}`);
     }
+  }
+
+  const smtpHost = process.env.SMTP_HOST?.trim() ?? '';
+  const smtpPort = process.env.SMTP_PORT?.trim() ?? '';
+  const smtpUser = process.env.SMTP_USER?.trim() ?? '';
+  const smtpPass = process.env.SMTP_PASS?.trim() ?? '';
+  const smtpFrom = process.env.SMTP_FROM?.trim() ?? '';
+
+  if (!smtpHost) {
+    errors.push('生产环境必须配置 SMTP_HOST');
+  }
+  if (!smtpPort) {
+    errors.push('生产环境必须配置 SMTP_PORT');
+  } else {
+    try {
+      getSmtpPort();
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : 'SMTP_PORT 非法');
+    }
+  }
+  if (!smtpUser) {
+    errors.push('生产环境必须配置 SMTP_USER');
+  }
+  if (!smtpPass) {
+    errors.push('生产环境必须配置 SMTP_PASS');
+  }
+  if (!smtpFrom) {
+    errors.push('生产环境必须配置 SMTP_FROM');
   }
 
   const redisUrl = process.env.REDIS_URL?.trim() ?? '';

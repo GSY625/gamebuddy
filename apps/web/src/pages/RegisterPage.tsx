@@ -45,9 +45,13 @@ export default function RegisterPage() {
       if (res.devCode) {
         setCodeHint(`开发环境验证码：${res.devCode}`);
       } else {
-        setCodeHint(res.message ?? '验证码已发送');
+        setCodeHint(res.message ?? '验证码已发送，请查收邮箱。');
       }
     } catch (err) {
+      setCodeSent(false);
+      setCodeHint(
+        '如果刚才发送失败或超时，之前邮件里的验证码可能已经失效，请重新获取最新验证码。',
+      );
       setError(err instanceof Error ? err.message : '发送验证码失败');
     }
   };
@@ -96,7 +100,7 @@ export default function RegisterPage() {
     <AppShell>
       <div className="auth-page">
         <div className="auth-mascot-wrap">
-          <MascotSvg variant="party" className="auth-mascot" />
+          <MascotSvg variant="party" className="auth-mascot" brandText="开黑鸭" />
         </div>
         <form className="auth-card glass-panel" onSubmit={submit}>
           <h1>加入开黑鸭</h1>

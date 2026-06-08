@@ -4,12 +4,18 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto, LoginDto, ResetPasswordDto } from './auth.dto';
-import { MailService } from './mail.service';
+import {
+  MailConfigurationError,
+  MailDeliveryError,
+  MailService,
+  MailTimeoutError,
+} from './mail.service';
 import { EmailCodeRateLimitService } from './email-code-rate-limit.service';
 import { VisibilityService } from '../visibility/visibility.service';
 import {
@@ -65,6 +71,22 @@ export class AuthService {
       await this.prisma.emailVerification.deleteMany({
         where: { email: normalizedEmail },
       });
+
+      if (error instanceof MailTimeoutError) {
+        throw new ServiceUnavailableException(
+          '邮件发送超时，本次验证码未生效，请重新获取最新验证码',
+        );
+      }
+
+      if (
+        error instanceof MailConfigurationError ||
+        error instanceof MailDeliveryError
+      ) {
+        throw new ServiceUnavailableException(
+          '邮件服务异常，本次验证码未生效，请稍后重新获取',
+        );
+      }
+
       throw new BadRequestException(mapMailSendError(error));
     }
 
@@ -74,7 +96,7 @@ export class AuthService {
     });
     return {
       message: '验证码已发送到邮箱，请查看邮件并在 15 分钟内完成验证。',
-      devCode: process.env.NODE_ENV !== 'production' ? code : undefined,
+      devCode: process.env.NODE_ENV === 'production' ? undefined : code,
     };
   }
 
@@ -107,7 +129,9 @@ export class AuthService {
 
     const verified = await this.verifyCode(email, code);
     if (!verified) {
-      throw new BadRequestException('邮箱验证码错误或已过期');
+      throw new BadRequestException(
+        '邮箱验证码错误、已过期，或已因重新发送而失效，请重新获取最新验证码',
+      );
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
@@ -155,7 +179,9 @@ export class AuthService {
 
     const ok = await this.verifyCode(email, dto.code.trim());
     if (!ok) {
-      throw new BadRequestException('邮箱验证码错误或已过期');
+      throw new BadRequestException(
+        '邮箱验证码错误、已过期，或已因重新发送而失效，请重新获取最新验证码',
+      );
     }
 
     const sameAsCurrent = await bcrypt.compare(dto.password, user.passwordHash);

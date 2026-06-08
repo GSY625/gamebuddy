@@ -85,6 +85,7 @@ export default function LoginPage() {
             <MascotSvg
               variant="wave"
               className="auth-mascot auth-mascot-hero"
+              brandText="开黑鸭"
               privacyMode={passwordFocused}
               lookAt={
                 passwordFocused
