@@ -275,6 +275,10 @@ export class AuthService {
       return 'superAdmin';
     }
 
+    if (currentRole === 'superAdmin') {
+      return 'user';
+    }
+
     return currentRole;
   }
 

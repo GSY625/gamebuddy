@@ -13,7 +13,7 @@ import { useOnboarding } from '../context/OnboardingContext';
 import { WS_URL } from '../utils/runtimeEnv';
 
 export function Layout() {
-  const { user, logout, visibilityStatus } = useAuth();
+  const { user, logout, forceLogout, visibilityStatus } = useAuth();
   const { startTour } = useOnboarding();
   const nav = useNavigate();
   const [copyToast, setCopyToast] = useState(false);
@@ -43,10 +43,13 @@ export function Layout() {
         });
       },
     );
+    socket.on('user:banned', (payload: { message?: string }) => {
+      forceLogout(payload.message ?? '账号已被封禁');
+    });
     return () => {
       socket.disconnect();
     };
-  }, [user]);
+  }, [forceLogout, user]);
 
   const copyNickname = async () => {
     if (!user?.nickname) return;

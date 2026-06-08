@@ -174,6 +174,16 @@ export class AuthSessionService {
       },
     });
 
+    if (session?.user.isBanned) {
+      if (!session.revokedAt) {
+        await this.prisma.authSession.update({
+          where: { id: session.id },
+          data: { revokedAt: new Date() },
+        });
+      }
+      throw new UnauthorizedException('账号已被封禁');
+    }
+
     if (
       !session ||
       session.userId !== payload.sub ||

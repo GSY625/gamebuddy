@@ -3242,6 +3242,46 @@ select option {
   margin: 0;
 }
 
+.admin-action-blocked,
+.admin-select-blocked {
+  opacity: 0.62;
+}
+
+.admin-action-blocked {
+  cursor: not-allowed;
+}
+
+.admin-action-blocked:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.admin-select-blocked {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.8rem 0.95rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(8, 7, 13, 0.42);
+  color: var(--muted);
+  box-shadow: none;
+  text-align: left;
+}
+
+.admin-select-blocked:hover {
+  background: rgba(8, 7, 13, 0.42);
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.admin-select-blocked-hint {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
 .admin-quick-links {
   display: flex;
   gap: 0.75rem;

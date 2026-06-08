@@ -74,7 +74,7 @@ type RoomMeta = {
 export default function ChatPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const nav = useNavigate();
-  const { user } = useAuth();
+  const { user, forceLogout } = useAuth();
   const [meta, setMeta] = useState<RoomMeta | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [text, setText] = useState('');
@@ -199,6 +199,9 @@ export default function ChatPage() {
     socket.on('user:notify', (payload: { title: string; message: string }) => {
       setNotifyToast({ title: payload.title, message: payload.message });
     });
+    socket.on('user:banned', (payload: { message?: string }) => {
+      forceLogout(payload.message ?? '账号已被封禁');
+    });
     socket.on(
       'room:removed',
       (payload: { roomId: string; message?: string }) => {
@@ -218,7 +221,7 @@ export default function ChatPage() {
     return () => {
       socket.disconnect();
     };
-  }, [roomId, loadMeta, nav, user?.id, user?.nickname]);
+  }, [forceLogout, roomId, loadMeta, nav, user?.id, user?.nickname]);
 
   useEffect(() => {
     if (mentionScrollId) return;

@@ -37,7 +37,7 @@ type DirectMessage = {
 
 export default function DirectMessagesPage() {
   const { friendId } = useParams<{ friendId?: string }>();
-  const { user } = useAuth();
+  const { user, forceLogout } = useAuth();
   const nav = useNavigate();
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -153,12 +153,21 @@ export default function DirectMessagesPage() {
     socket.on('dm:conversation:update', () => {
       void loadConversations().catch(() => {});
     });
+    socket.on('user:banned', (payload: { message?: string }) => {
+      forceLogout(payload.message ?? '账号已被封禁');
+    });
 
     return () => {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [activeConversation?.friend.id, activeConversation?.threadId, loadConversations, user]);
+  }, [
+    activeConversation?.friend.id,
+    activeConversation?.threadId,
+    forceLogout,
+    loadConversations,
+    user,
+  ]);
 
   useEffect(() => {
     if (!activeConversation?.threadId || !socketRef.current) return;

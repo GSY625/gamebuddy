@@ -12,6 +12,8 @@ import {
   SetUserRestrictionDto,
 } from './admin.dto';
 import { BusinessLogService } from '../logging/business-log.service';
+import { AuthSessionService } from '../auth/auth-session.service';
+import { ChatGateway } from '../chat/chat.gateway';
 
 type AdminActor = {
   id: string;
@@ -35,6 +37,8 @@ export class AdminService {
     private prisma: PrismaService,
     private notifications: NotificationsService,
     private businessLog: BusinessLogService,
+    private authSessions: AuthSessionService,
+    private chatGateway: ChatGateway,
   ) {}
 
   private async logAction(
@@ -458,6 +462,14 @@ export class AdminService {
       where: { id: userId },
       data: { isBanned: dto.banned },
     });
+
+    if (dto.banned) {
+      await this.authSessions.revokeAllUserSessions(userId);
+      await this.chatGateway.disconnectUserByBan(
+        userId,
+        '你的账号已被管理员封禁，如有疑问请联系平台。',
+      );
+    }
 
     await this.logAction(
       actor.id,

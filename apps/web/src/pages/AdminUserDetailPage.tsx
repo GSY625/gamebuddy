@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { api } from '@gamebuddy/api-client';
-import { PageHeader } from '../components/PageHeader';
+import { ApiError, api } from '@gamebuddy/api-client';
 import { AdminNav } from '../components/AdminNav';
+import { PageHeader } from '../components/PageHeader';
 import { ThemeToast } from '../components/ThemeToast';
+import { useAuth } from '../context/AuthContext';
 import {
   formatAdminActionLabel,
   formatAdminActionNote,
@@ -70,6 +71,11 @@ type UserDetail = {
   }>;
 };
 
+type ToastState = {
+  message: string;
+  variant: 'success' | 'warn';
+};
+
 const RESTRICTION_ITEMS: Array<{
   type: 'invite' | 'direct_message' | 'lfg' | 'chat';
   label: string;
@@ -80,20 +86,60 @@ const RESTRICTION_ITEMS: Array<{
   { type: 'chat', label: '聊天发言' },
 ];
 
+function getManageDisabledReason(
+  actor: { id: string; role?: 'user' | 'admin' | 'superAdmin' } | null,
+  target: UserDetail,
+) {
+  if (!actor) {
+    return '当前登录状态无效，请重新登录后再试';
+  }
+
+  if (actor.id === target.id) {
+    return '不能操作自己的管理员账号';
+  }
+
+  if (target.role === 'superAdmin') {
+    return '不能修改超级管理员账号';
+  }
+
+  if (target.role === 'admin' && actor.role !== 'superAdmin') {
+    return '只有超级管理员才能操作管理员账号';
+  }
+
+  return null;
+}
+
 export default function AdminUserDetailPage() {
   const { userId } = useParams<{ userId: string }>();
+  const { user } = useAuth();
+  const [actor, setActor] = useState<typeof user>(user);
   const [data, setData] = useState<UserDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [note, setNote] = useState('');
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [restrictionType, setRestrictionType] = useState<
     'invite' | 'direct_message' | 'lfg' | 'chat'
   >('invite');
 
+  const syncActor = async () => {
+    try {
+      const me = (await api.getMe()) as typeof user;
+      setActor(me);
+      return me;
+    } catch {
+      setActor(user);
+      return user;
+    }
+  };
+
   const load = async () => {
     if (!userId) return;
-    const res = (await api.adminGetUser(userId)) as UserDetail;
+    const [res] = await Promise.all([
+      api.adminGetUser(userId) as Promise<UserDetail>,
+      syncActor(),
+    ]);
     setData(res);
   };
 
@@ -101,8 +147,41 @@ export default function AdminUserDetailPage() {
     load().finally(() => setLoading(false));
   }, [userId]);
 
+  useEffect(() => {
+    setActor(user);
+  }, [user]);
+
+  const showErrorToast = (error: unknown, fallback: string) => {
+    const message =
+      error instanceof ApiError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : fallback;
+
+    setToast({
+      message: message || fallback,
+      variant: 'warn',
+    });
+    setActionError(message || fallback);
+  };
+
+  const showManageBlockedFeedback = (reason: string) => {
+    setToast({ message: reason, variant: 'warn' });
+    setActionError(reason);
+  };
+
   const toggleBan = async () => {
     if (!userId || !data) return;
+
+    setActionError(null);
+    const currentActor = (await syncActor()) ?? actor ?? user;
+    const disabledReason = getManageDisabledReason(currentActor, data);
+    if (disabledReason) {
+      showManageBlockedFeedback(disabledReason);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = (await api.adminSetUserBan(userId, {
@@ -110,15 +189,30 @@ export default function AdminUserDetailPage() {
         note,
       })) as UserDetail;
       setData(res);
-      setToast(res.isBanned ? '用户已封禁' : '用户已解除封禁');
+      setToast({
+        message: res.isBanned ? '用户已封禁' : '用户已解除封禁',
+        variant: 'success',
+      });
+      setActionError(null);
       setNote('');
+    } catch (error) {
+      showErrorToast(error, '账号处理失败，请稍后再试');
     } finally {
       setSubmitting(false);
     }
   };
 
   const toggleRestriction = async (enabled: boolean) => {
-    if (!userId) return;
+    if (!userId || !data) return;
+
+    setActionError(null);
+    const currentActor = (await syncActor()) ?? actor ?? user;
+    const disabledReason = getManageDisabledReason(currentActor, data);
+    if (disabledReason) {
+      showManageBlockedFeedback(disabledReason);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = (await api.adminSetUserRestriction(userId, {
@@ -127,8 +221,14 @@ export default function AdminUserDetailPage() {
         note,
       })) as UserDetail;
       setData(res);
-      setToast(enabled ? '限制已启用' : '限制已解除');
+      setToast({
+        message: enabled ? '限制已启用' : '限制已解除',
+        variant: 'success',
+      });
+      setActionError(null);
       setNote('');
+    } catch (error) {
+      showErrorToast(error, '功能限制处理失败，请稍后再试');
     } finally {
       setSubmitting(false);
     }
@@ -142,9 +242,18 @@ export default function AdminUserDetailPage() {
     return <div className="loading page-wrap">用户不存在</div>;
   }
 
+  const currentActor = actor ?? user;
+  const manageDisabledReason = getManageDisabledReason(currentActor, data);
+  const manageDisabled = Boolean(manageDisabledReason);
+
   return (
     <div className="page-wrap">
-      <ThemeToast message={toast} show={Boolean(toast)} onClose={() => setToast('')} />
+      <ThemeToast
+        message={toast?.message ?? ''}
+        show={Boolean(toast)}
+        onClose={() => setToast(null)}
+        variant={toast?.variant ?? 'success'}
+      />
       <PageHeader
         title="用户详情"
         subtitle="结合举报记录、封禁状态和管理员日志判断是否需要进一步处理。"
@@ -196,44 +305,78 @@ export default function AdminUserDetailPage() {
               placeholder="例如：多次骚扰举报核实成立。"
             />
           </label>
-          <button type="button" disabled={submitting} onClick={() => void toggleBan()}>
+          <button
+            type="button"
+            disabled={submitting}
+            className={manageDisabled ? 'admin-action-blocked' : undefined}
+            onClick={() => void toggleBan()}
+            title={manageDisabledReason ?? undefined}
+            aria-disabled={manageDisabled}
+          >
             {data.isBanned ? '解除封禁' : '封禁用户'}
           </button>
           <hr className="profile-divider" />
           <label className="form-field">
             <span className="form-field-label">功能限制类型</span>
-            <select
-              value={restrictionType}
-              onChange={(e) =>
-                setRestrictionType(
-                  e.target.value as 'invite' | 'direct_message' | 'lfg' | 'chat',
-                )
-              }
-            >
-              {RESTRICTION_ITEMS.map((item) => (
-                <option key={item.type} value={item.type}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
+            {manageDisabled ? (
+              <button
+                type="button"
+                className="admin-select-blocked"
+                onClick={() => showManageBlockedFeedback(manageDisabledReason ?? '当前不可操作')}
+                aria-disabled
+                title={manageDisabledReason ?? undefined}
+              >
+                <span>
+                  {RESTRICTION_ITEMS.find((item) => item.type === restrictionType)?.label ??
+                    '发送邀请'}
+                </span>
+                <span className="admin-select-blocked-hint">不可修改</span>
+              </button>
+            ) : (
+              <select
+                value={restrictionType}
+                onChange={(e) =>
+                  setRestrictionType(
+                    e.target.value as 'invite' | 'direct_message' | 'lfg' | 'chat',
+                  )
+                }
+              >
+                {RESTRICTION_ITEMS.map((item) => (
+                  <option key={item.type} value={item.type}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </label>
           <div className="admin-action-row">
             <button
               type="button"
               disabled={submitting}
+              className={manageDisabled ? 'admin-action-blocked' : undefined}
               onClick={() => void toggleRestriction(true)}
+              title={manageDisabledReason ?? undefined}
+              aria-disabled={manageDisabled}
             >
               启用限制
             </button>
             <button
               type="button"
-              className="ghost"
+              className={manageDisabled ? 'ghost admin-action-blocked' : 'ghost'}
               disabled={submitting}
               onClick={() => void toggleRestriction(false)}
+              title={manageDisabledReason ?? undefined}
+              aria-disabled={manageDisabled}
             >
               解除限制
             </button>
           </div>
+          {manageDisabledReason && (
+            <p className="muted small" style={{ marginTop: 12 }}>
+              当前不可操作：{manageDisabledReason}
+            </p>
+          )}
+          {actionError && <p className="error">{actionError}</p>}
         </section>
       </div>
 

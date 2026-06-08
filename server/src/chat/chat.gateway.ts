@@ -66,6 +66,12 @@ type ClusterSocketEvent =
       userId: string;
       roomId: string;
       payload: { partyId: string; message: string };
+    }
+  | {
+      sourceInstanceId: string;
+      target: 'disconnect-user';
+      userId: string;
+      payload: { event: 'user:banned'; message: string };
     };
 
 @WebSocketGateway({
@@ -163,6 +169,14 @@ export class ChatGateway
           ...event.payload,
         });
         return;
+      case 'disconnect-user':
+        this.server.to(`user:${event.userId}`).emit(event.payload.event, {
+          message: event.payload.message,
+        });
+        setTimeout(() => {
+          this.server.in(`user:${event.userId}`).disconnectSockets(true);
+        }, 80);
+        return;
     }
   }
 
@@ -221,6 +235,20 @@ export class ChatGateway
       online,
       ...(visibility ? { visibility } : {}),
     });
+  }
+
+  async disconnectUserByBan(userId: string, message: string) {
+    const clusterEvent: ClusterSocketEvent = {
+      sourceInstanceId: this.instanceId,
+      target: 'disconnect-user',
+      userId,
+      payload: {
+        event: 'user:banned',
+        message,
+      },
+    };
+    this.applyClusterEvent(clusterEvent);
+    await this.publishClusterEvent(clusterEvent);
   }
 
   private async markUserOnline(userId: string) {

@@ -65,6 +65,8 @@ export type TokenStorage = {
 };
 
 let inMemoryToken: string | null = null;
+const AUTH_FAILURE_MESSAGES = new Set(['账号已被封禁', '登录状态已失效，请重新登录']);
+const authFailureListeners = new Set<(message: string) => void>();
 
 let storage: TokenStorage = {
   get: () => inMemoryToken,
@@ -82,6 +84,27 @@ export function configureAuth(s: TokenStorage) {
 
 export function getToken() {
   return storage.get();
+}
+
+export function subscribeAuthFailure(listener: (message: string) => void) {
+  authFailureListeners.add(listener);
+  return () => {
+    authFailureListeners.delete(listener);
+  };
+}
+
+function notifyAuthFailure(message: string) {
+  if (!AUTH_FAILURE_MESSAGES.has(message)) {
+    return;
+  }
+
+  authFailureListeners.forEach((listener) => {
+    try {
+      listener(message);
+    } catch {
+      // noop
+    }
+  });
 }
 
 function storeAccessToken(token: string) {
@@ -252,6 +275,9 @@ async function request<T>(
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }));
     const { text, retryAfterSeconds } = parseErrorPayload(err);
+    if (res.status === 401) {
+      notifyAuthFailure(text || '请求失败');
+    }
     throw new ApiError(text || 'Request failed', retryAfterSeconds);
   }
   if (res.status === 204) {
