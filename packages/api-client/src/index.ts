@@ -440,7 +440,14 @@ export const api = {
       method: 'POST',
       body: fd,
     });
-    if (!res.ok) throw new Error('Upload failed');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: res.statusText }));
+      const { text, retryAfterSeconds } = parseErrorPayload(err);
+      if (res.status === 401) {
+        notifyAuthFailure(text || '请求失败');
+      }
+      throw new ApiError(text || '上传失败', retryAfterSeconds);
+    }
     return res.json() as Promise<{ url: string }>;
   },
   createLfg: (body: {
