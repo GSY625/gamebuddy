@@ -99,7 +99,7 @@ export default function RegisterPage() {
           <MascotSvg variant="party" className="auth-mascot" />
         </div>
         <form className="auth-card glass-panel" onSubmit={submit}>
-          <h1>加入 GameBuddy</h1>
+          <h1>加入开黑鸭</h1>
           <p className="auth-lead muted">开始你的下一场开黑之旅</p>
           <input
             type="email"

@@ -1,4 +1,4 @@
-# GameBuddy 桌面端（Tauri）
+# 开黑鸭桌面端（Tauri）
 
 当前环境未检测到 Rust 时，请先用 Web 客户端开发：
 

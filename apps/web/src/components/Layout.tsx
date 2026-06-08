@@ -91,7 +91,7 @@ export function Layout() {
         <header className="topbar glass-panel">
           <Link to="/" className="brand">
             <span className="brand-dot" />
-            GameBuddy
+            开黑鸭
           </Link>
           <nav>
             <Link to="/games">游戏分区</Link>

@@ -24,7 +24,7 @@ export class MailService {
     const info = await transporter.sendMail({
       from: process.env.SMTP_FROM,
       to: email,
-      subject: 'GameBuddy 邮箱验证码',
+      subject: '开黑鸭 邮箱验证码',
       text: `您的验证码是：${code}，15 分钟内有效。`,
     });
 
