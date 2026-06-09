@@ -74,6 +74,10 @@ function resolveApiBases() {
     throw new Error('生产环境缺少 VITE_API_URL，前端已停止启动');
   }
 
+  if (configured.startsWith('/')) {
+    return [normalizeUrl(configured)];
+  }
+
   const url = parsePublicUrl('VITE_API_URL', configured);
   if (isLocalHostname(url.hostname)) {
     throw new Error('生产环境的 VITE_API_URL 不能指向 localhost 或本机地址');

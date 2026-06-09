@@ -10,20 +10,26 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import {
-  SupportedImageExtension,
-  UploadService,
-} from './upload.service';
+import { SupportedImageExtension, UploadService } from './upload.service';
 import { UploadQuotaService } from './upload-quota.service';
 import { HttpRateLimitGuard } from '../rate-limit/rate-limit.guard';
 import { RateLimit } from '../rate-limit/rate-limit.decorator';
 
 const ALLOWED_IMAGE_MIME_TYPES = new Set([
   'image/jpeg',
+  'image/jpg',
   'image/png',
   'image/gif',
   'image/webp',
 ]);
+
+function normalizeMimeType(mimeType: string) {
+  const normalized = mimeType.trim().toLowerCase();
+  if (normalized === 'image/jpg') {
+    return 'image/jpeg';
+  }
+  return normalized;
+}
 
 function detectImageType(
   buffer: Buffer,
@@ -98,7 +104,7 @@ export class UploadController {
       storage: memoryStorage(),
       limits: { fileSize: 5 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
-        if (!ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype)) {
+        if (!ALLOWED_IMAGE_MIME_TYPES.has(normalizeMimeType(file.mimetype))) {
           cb(
             new BadRequestException(
               '仅支持 JPG、PNG、GIF、WebP 格式的图片',
@@ -124,8 +130,9 @@ export class UploadController {
       throw new BadRequestException('图片内容无效或格式不受支持');
     }
 
-    if (detected.mime !== file.mimetype) {
-      throw new BadRequestException('文件类型与图片内容不匹配');
+    const declaredMime = normalizeMimeType(file.mimetype);
+    if (!ALLOWED_IMAGE_MIME_TYPES.has(declaredMime)) {
+      throw new BadRequestException('仅支持 JPG、PNG、GIF、WebP 格式的图片');
     }
 
     await this.uploadQuota.assertCanUpload(req.user.id);

@@ -4,7 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { join } from 'path';
+import { isAbsolute, join } from 'path';
 import { AppLoggerService } from './logging/app-logger.service';
 import { SentryService } from './logging/sentry.service';
 import {
@@ -47,7 +47,10 @@ async function bootstrap() {
   });
   if (shouldServeLocalUploads()) {
     const uploadDir = getUploadDir();
-    app.useStaticAssets(join(process.cwd(), uploadDir), { prefix: '/uploads/' });
+    const uploadRoot = isAbsolute(uploadDir)
+      ? uploadDir
+      : join(process.cwd(), uploadDir);
+    app.useStaticAssets(uploadRoot, { prefix: '/uploads/' });
   }
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
