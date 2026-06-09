@@ -18,6 +18,7 @@ export default function ForgotPasswordPage() {
   const [captchaId, setCaptchaId] = useState('');
   const [captchaCode, setCaptchaCode] = useState('');
   const { send, sendDisabled, sendButtonLabel } = useSendVerificationCode();
+  const showDevCode = import.meta.env.DEV;
 
   const sendCode = async () => {
     const emailValidation = validateEmailInput(email);
@@ -27,7 +28,7 @@ export default function ForgotPasswordPage() {
     }
 
     if (!captchaId.trim()) {
-      setError('图形验证码尚未加载成功，请先点刷新重试');
+      setError('图形验证码尚未加载成功，请先点击刷新重试');
       return;
     }
 
@@ -45,14 +46,12 @@ export default function ForgotPasswordPage() {
         captchaCode: captchaCode.trim(),
       });
       setSuccess(
-        res.devCode
+        showDevCode && res.devCode
           ? `验证码已发送（开发环境：${res.devCode}）`
-          : '验证码已发送，请查收邮箱。',
+          : '邮箱验证码已发送，请查收邮箱收件箱或垃圾箱。',
       );
     } catch (err) {
-      setSuccess(
-        '如果刚才发送失败或超时，之前邮件里的验证码可能已经失效，请重新获取最新验证码。',
-      );
+      setSuccess('如果刚才发送失败或超时，之前邮件里的验证码可能已经失效，请重新获取最新验证码。');
       setError(err instanceof Error ? err.message : '发送失败');
     }
   };
@@ -88,7 +87,10 @@ export default function ForgotPasswordPage() {
     <AppShell>
       <div className="auth-page">
         <div className="auth-mascot-wrap">
-          <MascotSvg variant="wave" className="auth-mascot" brandText="开黑鸭" />
+          <div className="auth-mascot-badge-wrap">
+            <MascotSvg variant="wave" className="auth-mascot" />
+            <div className="auth-mascot-brand">开黑鸭</div>
+          </div>
         </div>
         <form className="auth-card glass-panel" onSubmit={submit}>
           <h1>找回密码</h1>

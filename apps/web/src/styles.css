@@ -886,6 +886,34 @@ textarea:focus,
   animation: mascotFloat 6s ease-in-out infinite;
 }
 
+.auth-mascot-badge-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-mascot-brand {
+  position: absolute;
+  left: 50%;
+  top: 68%;
+  transform: translate(-50%, -50%);
+  min-width: 4.5rem;
+  padding: 0.28rem 0.8rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #7c3aed, #c084fc);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #fff8ff;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-align: center;
+  box-shadow: 0 10px 24px rgba(124, 58, 237, 0.28);
+  pointer-events: none;
+  z-index: 2;
+}
+
 .auth-card {
   padding: 2rem 2.25rem;
   border-radius: 20px;
@@ -983,6 +1011,13 @@ textarea:focus,
   height: 280px;
   filter: drop-shadow(0 26px 48px rgba(124, 58, 237, 0.26));
   transition: transform 140ms ease-out, filter 180ms ease-out;
+}
+
+.auth-mascot-brand-hero {
+  top: 69%;
+  min-width: 5.2rem;
+  padding: 0.4rem 1rem;
+  font-size: 0.95rem;
 }
 
 .auth-mascot-wrap-login .auth-mascot-hero {

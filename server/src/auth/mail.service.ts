@@ -4,6 +4,7 @@ import {
   getSmtpPort,
   getSmtpSecure,
   isProductionRuntime,
+  shouldUseLocalDevMailFlow,
 } from '../common/runtime-env';
 
 export class MailConfigurationError extends Error {
@@ -55,7 +56,7 @@ export class MailService {
     const pass = process.env.SMTP_PASS?.trim();
 
     if (!host) {
-      if (isProductionRuntime()) {
+      if (isProductionRuntime() || !shouldUseLocalDevMailFlow()) {
         throw new MailConfigurationError('生产环境未配置 SMTP_HOST');
       }
 

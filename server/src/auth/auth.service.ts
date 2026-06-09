@@ -14,7 +14,10 @@ import { EmailCodeRateLimitService } from './email-code-rate-limit.service';
 import { VisibilityService } from '../visibility/visibility.service';
 import { validateEmailForVerification } from './email-validation';
 import { BusinessLogService } from '../logging/business-log.service';
-import { getConfiguredAdminEmails } from '../common/runtime-env';
+import {
+  getConfiguredAdminEmails,
+  shouldUseLocalDevMailFlow,
+} from '../common/runtime-env';
 import { RedisService } from '../redis/redis.service';
 import { AuthSessionService } from './auth-session.service';
 import { MailQueueService } from './mail-queue.service';
@@ -77,7 +80,7 @@ export class AuthService {
     return {
       message:
         '验证码发送请求已提交，请留意邮箱；若 1 分钟内未收到，请重新获取最新验证码。',
-      devCode: process.env.NODE_ENV === 'production' ? undefined : code,
+      devCode: shouldUseLocalDevMailFlow() ? code : undefined,
     };
   }
 

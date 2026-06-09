@@ -13,6 +13,10 @@ function isProduction() {
   return process.env.NODE_ENV === 'production';
 }
 
+function isDevelopment() {
+  return process.env.NODE_ENV === 'development';
+}
+
 function isLocalHostname(hostname: string) {
   const normalized = hostname.trim().toLowerCase();
   return (
@@ -85,6 +89,28 @@ export function getPublicBaseUrl() {
     return normalizeUrl(configured);
   }
   return DEFAULT_DEV_PUBLIC_BASE_URL;
+}
+
+export function shouldUseLocalDevMailFlow() {
+  if (isProduction()) {
+    return false;
+  }
+
+  if (isDevelopment()) {
+    return true;
+  }
+
+  const configured = process.env.PUBLIC_BASE_URL?.trim();
+  if (!configured) {
+    return false;
+  }
+
+  try {
+    const url = parseHttpUrl('PUBLIC_BASE_URL', configured);
+    return isLocalHostname(url.hostname);
+  } catch {
+    return false;
+  }
 }
 
 export function getConfiguredAdminEmails() {

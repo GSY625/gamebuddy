@@ -148,30 +148,34 @@ export function MascotSvg({
         >
           <ellipse
             cx="50"
-            cy="72"
-            rx="15.5"
-            ry="6.2"
-            fill="#140f20"
-            opacity="0.22"
+            cy="67.8"
+            rx="18"
+            ry="8"
+            fill="#120d1d"
+            opacity="0.18"
           />
           <rect
-            x="34"
-            y="66"
-            width="32"
-            height="11.5"
-            rx="5.75"
+            x="31.5"
+            y="61.8"
+            width="37"
+            height="12.8"
+            rx="6.4"
             fill="url(#mascotBrandBadge)"
             stroke="rgba(255,255,255,0.32)"
             strokeWidth="0.9"
             filter="url(#mascotBrandGlow)"
           />
+          <path
+            d="M35 62.5 Q50 58.8 65 62.5"
+            fill="rgba(255,255,255,0.14)"
+          />
           <text
             x="50"
-            y="73.6"
+            y="70.2"
             textAnchor="middle"
-            fontSize="7.2"
+            fontSize="6.9"
             fontWeight="800"
-            letterSpacing="0.45"
+            letterSpacing="0.35"
             fill="#fff8ff"
             style={{ fontFamily: '"Nunito", "Microsoft YaHei", sans-serif' }}
           >

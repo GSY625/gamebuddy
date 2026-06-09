@@ -82,31 +82,44 @@ export default function LoginPage() {
                 transform: `translateX(${pageMotion.x * 18}px) scale(${1 - Math.abs(pageMotion.y) * 0.08})`,
               }}
             />
-            <MascotSvg
-              variant="wave"
-              className="auth-mascot auth-mascot-hero"
-              brandText="开黑鸭"
-              privacyMode={passwordFocused}
-              lookAt={
-                passwordFocused
-                  ? undefined
-                  : {
-                      x: pageMotion.x * 1.4,
-                      y: pageMotion.y * 1.1,
-                    }
-              }
-              style={{
-                transform: passwordFocused
-                  ? `translate(${pageMotion.x * -10}px, ${pageMotion.y * 8}px) rotate(${-10 + pageMotion.x * 3}deg) scale(1.02)`
-                  : `translate(${pageMotion.x * 14}px, ${pageMotion.y * 10}px) rotate(${pageMotion.x * 4}deg) scale(${pageActive ? 1.02 : 1})`,
-              }}
-            />
+            <div className="auth-mascot-badge-wrap">
+              <MascotSvg
+                variant="wave"
+                className="auth-mascot auth-mascot-hero"
+                privacyMode={passwordFocused}
+                lookAt={
+                  passwordFocused
+                    ? undefined
+                    : {
+                        x: pageMotion.x * 1.4,
+                        y: pageMotion.y * 1.1,
+                      }
+                }
+                style={{
+                  transform: passwordFocused
+                    ? `translate(${pageMotion.x * -10}px, ${pageMotion.y * 8}px) rotate(${-10 + pageMotion.x * 3}deg) scale(1.02)`
+                    : `translate(${pageMotion.x * 14}px, ${pageMotion.y * 10}px) rotate(${pageMotion.x * 4}deg) scale(${pageActive ? 1.02 : 1})`,
+                }}
+              />
+              <div
+                className="auth-mascot-brand auth-mascot-brand-hero"
+                style={{
+                  transform: `translate(calc(-50% + ${pageMotion.x * 8}px), calc(-50% + ${pageMotion.y * 6}px))`,
+                }}
+              >
+                开黑鸭
+              </div>
+            </div>
           </div>
           <div className="auth-mascot-copy">
             <p className="auth-mascot-kicker">
               {passwordFocused ? '隐私模式已开启' : '整个页面都能触发视线联动'}
             </p>
-            <h2>{passwordFocused ? '你输密码时，我先转过去。' : '在页面里移动鼠标，看看它会不会偷看你。'}</h2>
+            <h2>
+              {passwordFocused
+                ? '你输密码时，我先转过去。'
+                : '在页面里移动鼠标，看看它会不会偷看你。'}
+            </h2>
             <p>
               {passwordFocused
                 ? '聚焦密码框后，小搭子会主动背过身，不会盯着你的密码输入。'
@@ -191,7 +204,7 @@ export default function LoginPage() {
             <Link to="/forgot-password">忘记密码？</Link>
           </p>
           <p className="auth-footer">
-            没有账号？<Link to="/register">注册</Link>
+            没有账号？ <Link to="/register">注册</Link>
           </p>
         </form>
       </div>

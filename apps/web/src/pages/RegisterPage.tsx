@@ -21,6 +21,7 @@ export default function RegisterPage() {
   const [captchaId, setCaptchaId] = useState('');
   const [captchaCode, setCaptchaCode] = useState('');
   const { send, sendDisabled, sendButtonLabel } = useSendVerificationCode();
+  const showDevCode = import.meta.env.DEV;
 
   const sendCode = async () => {
     const emailValidation = validateEmailInput(email);
@@ -30,7 +31,7 @@ export default function RegisterPage() {
     }
 
     if (!captchaId.trim()) {
-      setError('图形验证码尚未加载成功，请先点刷新重试');
+      setError('图形验证码尚未加载成功，请先点击刷新重试');
       return;
     }
 
@@ -47,16 +48,14 @@ export default function RegisterPage() {
         captchaCode: captchaCode.trim(),
       });
       setCodeSent(true);
-      if (res.devCode) {
+      if (showDevCode && res.devCode) {
         setCodeHint(`开发环境验证码：${res.devCode}`);
       } else {
-        setCodeHint(res.message ?? '验证码已发送，请查收邮箱。');
+        setCodeHint(res.message ?? '邮箱验证码已发送，请查收邮箱收件箱或垃圾箱。');
       }
     } catch (err) {
       setCodeSent(false);
-      setCodeHint(
-        '如果刚才发送失败或超时，之前邮件里的验证码可能已经失效，请重新获取最新验证码。',
-      );
+      setCodeHint('如果刚才发送失败或超时，之前邮件里的验证码可能已经失效，请重新获取最新验证码。');
       setError(err instanceof Error ? err.message : '发送验证码失败');
     }
   };
@@ -105,7 +104,10 @@ export default function RegisterPage() {
     <AppShell>
       <div className="auth-page">
         <div className="auth-mascot-wrap">
-          <MascotSvg variant="party" className="auth-mascot" brandText="开黑鸭" />
+          <div className="auth-mascot-badge-wrap">
+            <MascotSvg variant="party" className="auth-mascot" />
+            <div className="auth-mascot-brand">开黑鸭</div>
+          </div>
         </div>
         <form className="auth-card glass-panel" onSubmit={submit}>
           <h1>加入开黑鸭</h1>
@@ -158,7 +160,7 @@ export default function RegisterPage() {
             注册
           </button>
           <p className="auth-footer">
-            已有账号？<Link to="/login">登录</Link>
+            已有账号？ <Link to="/login">登录</Link>
           </p>
         </form>
       </div>
