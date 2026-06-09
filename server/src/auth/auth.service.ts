@@ -10,22 +10,14 @@ import {
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto, LoginDto, ResetPasswordDto } from './auth.dto';
-import {
-  MailConfigurationError,
-  MailDeliveryError,
-  MailService,
-  MailTimeoutError,
-} from './mail.service';
 import { EmailCodeRateLimitService } from './email-code-rate-limit.service';
 import { VisibilityService } from '../visibility/visibility.service';
-import {
-  mapMailSendError,
-  validateEmailForVerification,
-} from './email-validation';
+import { validateEmailForVerification } from './email-validation';
 import { BusinessLogService } from '../logging/business-log.service';
 import { getConfiguredAdminEmails } from '../common/runtime-env';
 import { RedisService } from '../redis/redis.service';
 import { AuthSessionService } from './auth-session.service';
+import { MailQueueService } from './mail-queue.service';
 
 const LOGIN_FAILURE_TRACK_SECONDS = 24 * 60 * 60;
 const LOGIN_LOCK_STEPS = [
@@ -43,7 +35,7 @@ export type AuthRequestContext = {
 export class AuthService {
   constructor(
     private prisma: PrismaService,
-    private mail: MailService,
+    private mailQueue: MailQueueService,
     private rateLimit: EmailCodeRateLimitService,
     private visibility: VisibilityService,
     private businessLog: BusinessLogService,
@@ -66,28 +58,16 @@ export class AuthService {
     });
 
     try {
-      await this.mail.sendCode(normalizedEmail, code);
+      await this.mailQueue.enqueueVerificationCode(normalizedEmail, code);
     } catch (error) {
       await this.prisma.emailVerification.deleteMany({
         where: { email: normalizedEmail },
       });
-
-      if (error instanceof MailTimeoutError) {
-        throw new ServiceUnavailableException(
-          '邮件发送超时，本次验证码未生效，请重新获取最新验证码',
-        );
-      }
-
-      if (
-        error instanceof MailConfigurationError ||
-        error instanceof MailDeliveryError
-      ) {
-        throw new ServiceUnavailableException(
-          '邮件服务异常，本次验证码未生效，请稍后重新获取',
-        );
-      }
-
-      throw new BadRequestException(mapMailSendError(error));
+      throw new ServiceUnavailableException(
+        error instanceof Error
+          ? error.message
+          : '验证码发送任务提交失败，请稍后重试',
+      );
     }
 
     await this.rateLimit.recordSend(normalizedEmail);
@@ -95,7 +75,8 @@ export class AuthService {
       email: normalizedEmail,
     });
     return {
-      message: '验证码已发送到邮箱，请查看邮件并在 15 分钟内完成验证。',
+      message:
+        '验证码发送请求已提交，请留意邮箱；若 1 分钟内未收到，请重新获取最新验证码。',
       devCode: process.env.NODE_ENV === 'production' ? undefined : code,
     };
   }
@@ -328,7 +309,7 @@ export class AuthService {
     });
     throw new HttpException(
       {
-        message: `该账号登录失败次数过多，请${this.formatRetryAfter(retryAfterSeconds)}后再试`,
+        message: `该账号登录失败次数过多，请 ${this.formatRetryAfter(retryAfterSeconds)} 后再试`,
         retryAfterSeconds,
       },
       HttpStatus.TOO_MANY_REQUESTS,
@@ -371,7 +352,7 @@ export class AuthService {
     });
     throw new HttpException(
       {
-        message: `该账号登录失败次数过多，请${this.formatRetryAfter(lockStep.lockSeconds)}后再试`,
+        message: `该账号登录失败次数过多，请 ${this.formatRetryAfter(lockStep.lockSeconds)} 后再试`,
         retryAfterSeconds: lockStep.lockSeconds,
       },
       HttpStatus.TOO_MANY_REQUESTS,

@@ -9,6 +9,8 @@ packages/shared/src/*.d.ts
 server/src/generated/
 .env
 .env.local
+server/.env
+apps/web/.env
 uploads/
 dev.db
 server/prisma/*.db

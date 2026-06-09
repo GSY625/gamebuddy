@@ -3,7 +3,8 @@ type ViteEnvShape = {
   VITE_API_URL?: string;
 };
 
-const DEFAULT_LOCAL_API_BASE = 'http://localhost:3000';
+const DEFAULT_LOCAL_API_BASE = '/api';
+const FALLBACK_LOCAL_API_BASE = 'http://localhost:3000';
 
 function isLocalHostname(hostname: string) {
   const normalized = hostname.trim().toLowerCase();
@@ -35,13 +36,38 @@ function normalizeUrl(value: string) {
   return value.replace(/\/+$/, '');
 }
 
-function resolveApiBase() {
+function normalizeDevApiBase(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return DEFAULT_LOCAL_API_BASE;
+  }
+
+  if (trimmed.startsWith('/')) {
+    return normalizeUrl(trimmed);
+  }
+
+  const url = parsePublicUrl('VITE_API_URL', trimmed);
+  return normalizeUrl(url.toString());
+}
+
+function uniqueBases(values: string[]) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function resolveApiBases() {
   const env =
     (import.meta as ImportMeta & { env?: ViteEnvShape }).env ?? {};
   const configured = env.VITE_API_URL?.trim();
 
   if (!env.PROD) {
-    return configured ? normalizeUrl(configured) : DEFAULT_LOCAL_API_BASE;
+    const primary = configured
+      ? normalizeDevApiBase(configured)
+      : DEFAULT_LOCAL_API_BASE;
+    const secondary =
+      primary === DEFAULT_LOCAL_API_BASE
+        ? FALLBACK_LOCAL_API_BASE
+        : DEFAULT_LOCAL_API_BASE;
+    return uniqueBases([primary, secondary]);
   }
 
   if (!configured) {
@@ -53,10 +79,15 @@ function resolveApiBase() {
     throw new Error('生产环境的 VITE_API_URL 不能指向 localhost 或本机地址');
   }
 
-  return normalizeUrl(configured);
+  return [normalizeUrl(configured)];
 }
 
-const API_BASE = resolveApiBase();
+const API_BASES = resolveApiBases();
+const API_BASE = API_BASES[0];
+
+function buildRequestUrl(base: string, path: string) {
+  return `${base}${path}`;
+}
 
 export type TokenStorage = {
   get: () => string | null;
@@ -207,11 +238,7 @@ async function fetchWithSessionRetry(
   options: RequestInit = {},
   meta: RequestMeta = {},
 ) {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    credentials: 'include',
-    headers: buildHeaders(options, meta.includeAuthHeader !== false),
-  });
+  const response = await fetchWithApiBases(path, options, meta);
 
   if (response.status !== 401 || !shouldAttemptRefresh(path, meta)) {
     return response;
@@ -223,11 +250,32 @@ async function fetchWithSessionRetry(
     return response;
   }
 
-  return fetch(`${API_BASE}${path}`, {
-    ...options,
-    credentials: 'include',
-    headers: buildHeaders(options, meta.includeAuthHeader !== false),
-  });
+  return fetchWithApiBases(path, options, meta);
+}
+
+async function fetchWithApiBases(
+  path: string,
+  options: RequestInit = {},
+  meta: RequestMeta = {},
+) {
+  const headers = buildHeaders(options, meta.includeAuthHeader !== false);
+  let lastError: unknown;
+
+  for (const base of API_BASES) {
+    try {
+      return await fetch(buildRequestUrl(base, path), {
+        ...options,
+        credentials: 'include',
+        headers,
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('无法连接服务器，请确认后端已启动');
 }
 
 async function refreshAccessToken() {
@@ -271,7 +319,16 @@ async function request<T>(
   options: RequestInit = {},
   meta: RequestMeta = {},
 ): Promise<T> {
-  const res = await fetchWithSessionRetry(path, options, meta);
+  let res: Response;
+  try {
+    res = await fetchWithSessionRetry(path, options, meta);
+  } catch (error) {
+    throw new ApiError(
+      error instanceof Error && error.message
+        ? `无法连接服务器，请确认后端已启动：${error.message}`
+        : '无法连接服务器，请确认后端已启动',
+    );
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }));
     const { text, retryAfterSeconds } = parseErrorPayload(err);

@@ -8,6 +8,7 @@ type RedisMessageHandler = (message: string) => void | Promise<void>;
 @Injectable()
 export class RedisService implements OnModuleDestroy, OnModuleInit {
   private static memorySubscribers = new Map<string, Set<RedisMessageHandler>>();
+  private static memoryLists = new Map<string, string[]>();
 
   private readonly logger = new Logger(RedisService.name);
   private client: Redis | null = null;
@@ -34,7 +35,7 @@ export class RedisService implements OnModuleDestroy, OnModuleInit {
         this.logger.error(`生产环境 Redis 异常: ${err.message}`);
         return;
       }
-      this.logger.warn(`Redis 不可用，使用内存模式: ${err.message}`);
+      this.logger.warn(`Redis 不可用，切换为内存模式: ${err.message}`);
     });
 
     return client;
@@ -275,6 +276,53 @@ export class RedisService implements OnModuleDestroy, OnModuleInit {
       }
       this.useMemory = true;
       this.memory.delete(key);
+    }
+  }
+
+  async lpush(key: string, value: string): Promise<number> {
+    if (this.useMemory) {
+      const list = RedisService.memoryLists.get(key) ?? [];
+      list.unshift(value);
+      RedisService.memoryLists.set(key, list);
+      return list.length;
+    }
+
+    try {
+      if (!this.client) await this.getClient().connect();
+      return await this.getClient().lpush(key, value);
+    } catch {
+      if (this.production) {
+        throw new Error('生产环境 Redis 队列写入失败，已拒绝降级到内存模式');
+      }
+      this.useMemory = true;
+      return this.lpush(key, value);
+    }
+  }
+
+  async rpop(key: string): Promise<string | null> {
+    if (this.useMemory) {
+      const list = RedisService.memoryLists.get(key);
+      if (!list || list.length === 0) {
+        return null;
+      }
+      const value = list.pop() ?? null;
+      if (list.length === 0) {
+        RedisService.memoryLists.delete(key);
+      } else {
+        RedisService.memoryLists.set(key, list);
+      }
+      return value;
+    }
+
+    try {
+      if (!this.client) await this.getClient().connect();
+      return await this.getClient().rpop(key);
+    } catch {
+      if (this.production) {
+        throw new Error('生产环境 Redis 队列读取失败，已拒绝降级到内存模式');
+      }
+      this.useMemory = true;
+      return this.rpop(key);
     }
   }
 

@@ -7,7 +7,7 @@ import {
 } from '../common/runtime-env';
 
 export class MailConfigurationError extends Error {
-  constructor(message = '邮件服务未配置完成') {
+  constructor(message = '邮件服务未配置完整') {
     super(message);
     this.name = 'MailConfigurationError';
   }

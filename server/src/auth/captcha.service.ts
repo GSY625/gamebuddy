@@ -1,47 +1,53 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomBytes, randomInt } from 'crypto';
+import { RedisService } from '../redis/redis.service';
 
-/** 小写英文字母 + 数字（排除易混淆的 0/o、1/l/i） */
 const CAPTCHA_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789';
-
-type CaptchaRecord = {
-  answer: string;
-  expiresAt: number;
-};
 
 @Injectable()
 export class CaptchaService {
-  private readonly store = new Map<string, CaptchaRecord>();
-  private readonly ttlMs = 5 * 60 * 1000;
+  private readonly ttlSeconds = 5 * 60;
 
-  create() {
-    this.prune();
+  constructor(private readonly redis: RedisService) {}
+
+  async create() {
     const code = this.generateCode();
     const captchaId = randomBytes(16).toString('hex');
-    this.store.set(captchaId, {
-      answer: this.normalize(code),
-      expiresAt: Date.now() + this.ttlMs,
-    });
+    await this.redis.set(
+      this.buildKey(captchaId),
+      this.normalize(code),
+      'EX',
+      this.ttlSeconds,
+    );
+
     return {
       captchaId,
       image: this.renderSvg(code),
     };
   }
 
-  verify(captchaId: string, input: string) {
+  async verify(captchaId: string, input: string) {
     if (!captchaId?.trim() || !input?.trim()) {
       throw new BadRequestException('请输入图形验证码');
     }
-    this.prune();
-    const record = this.store.get(captchaId);
-    this.store.delete(captchaId);
-    if (!record || record.expiresAt < Date.now()) {
+
+    const key = this.buildKey(captchaId);
+    const record = await this.redis.get(key);
+    await this.redis.del(key);
+
+    if (!record) {
       throw new BadRequestException('图形验证码已过期，请刷新后重试');
     }
-    if (record.answer !== this.normalize(input)) {
+
+    if (record !== this.normalize(input)) {
       throw new BadRequestException('图形验证码错误');
     }
+
     return true;
+  }
+
+  private buildKey(captchaId: string) {
+    return `auth:captcha:${captchaId}`;
   }
 
   private generateCode() {
@@ -54,15 +60,6 @@ export class CaptchaService {
 
   private normalize(value: string) {
     return value.trim().toLowerCase();
-  }
-
-  private prune() {
-    const now = Date.now();
-    for (const [id, record] of this.store) {
-      if (record.expiresAt < now) {
-        this.store.delete(id);
-      }
-    }
   }
 
   private renderSvg(code: string) {

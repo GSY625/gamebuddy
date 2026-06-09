@@ -12,16 +12,21 @@ import {
   sanitizeForLog,
   shouldSkipRequestLogging,
 } from './logging.utils';
+import { SentryService } from './sentry.service';
 
 @Catch()
 export class HttpExceptionLoggingFilter implements ExceptionFilter {
   constructor(
     private logger: AppLoggerService,
     private requestContext: RequestContextService,
+    private sentry: SentryService,
   ) {}
 
   catch(exception: unknown, host: ArgumentsHost) {
     if (host.getType() !== 'http') {
+      this.sentry.captureException(exception, {
+        transport: host.getType(),
+      });
       throw exception;
     }
 
@@ -84,6 +89,20 @@ export class HttpExceptionLoggingFilter implements ExceptionFilter {
         },
         exception,
       );
+    }
+
+    if (statusCode >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      this.sentry.captureException(exception, {
+        statusCode,
+        method: req.method,
+        path,
+        ip: getClientIp(req),
+        userId: req.user?.id,
+        params: sanitizeForLog(req.params) as Record<string, unknown>,
+        query: sanitizeForLog(req.query) as Record<string, unknown>,
+        body: sanitizeForLog(req.body) as Record<string, unknown>,
+        response: sanitizeForLog(body) as Record<string, unknown>,
+      });
     }
 
     res.status(statusCode).json(body);

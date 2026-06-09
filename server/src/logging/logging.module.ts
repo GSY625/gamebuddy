@@ -6,6 +6,7 @@ import { HttpExceptionLoggingFilter } from './http-exception.filter';
 import { RequestContextInterceptor } from './request-context.interceptor';
 import { RequestContextMiddleware } from './request-context.middleware';
 import { RequestContextService } from './request-context.service';
+import { SentryService } from './sentry.service';
 
 @Global()
 @Module({
@@ -13,6 +14,7 @@ import { RequestContextService } from './request-context.service';
     RequestContextService,
     AppLoggerService,
     BusinessLogService,
+    SentryService,
     RequestContextMiddleware,
     {
       provide: APP_INTERCEPTOR,
@@ -27,6 +29,7 @@ import { RequestContextService } from './request-context.service';
     RequestContextService,
     AppLoggerService,
     BusinessLogService,
+    SentryService,
     RequestContextMiddleware,
   ],
 })

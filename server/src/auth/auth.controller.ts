@@ -58,7 +58,7 @@ export class AuthController {
     windowSeconds: 60,
     message: '获取图形验证码过于频繁，请稍后再试',
   })
-  getCaptcha() {
+  async getCaptcha() {
     return this.captchaService.create();
   }
 
@@ -70,8 +70,8 @@ export class AuthController {
     windowSeconds: 600,
     message: '发送验证码过于频繁，请稍后再试',
   })
-  sendCode(@Body() dto: SendCodeDto) {
-    this.captchaService.verify(dto.captchaId, dto.captchaCode);
+  async sendCode(@Body() dto: SendCodeDto) {
+    await this.captchaService.verify(dto.captchaId, dto.captchaCode);
     return this.authService.sendVerificationCode(dto.email);
   }
 

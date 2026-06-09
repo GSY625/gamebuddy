@@ -8,7 +8,7 @@ export function getChinaDateKey(now = new Date()): string {
   );
 }
 
-/** 距离北京时间次日 0 点的秒数（至少 1） */
+/** 距离北京时间次日 0 点的秒数，至少返回 1 */
 export function secondsUntilChinaMidnight(now = Date.now()): number {
   const shanghaiMs = now + 8 * 3600 * 1000;
   const shanghaiDay = Math.floor(shanghaiMs / 86400000);

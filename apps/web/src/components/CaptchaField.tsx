@@ -16,9 +16,11 @@ export function CaptchaField({
 }: Props) {
   const [image, setImage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
       const res = (await api.getCaptcha()) as {
         captchaId: string;
@@ -27,10 +29,18 @@ export function CaptchaField({
       onCaptchaIdChange(res.captchaId);
       setImage(res.image);
       onChange('');
+    } catch (err) {
+      onCaptchaIdChange('');
+      setImage('');
+      setError(
+        err instanceof Error
+          ? err.message
+          : '图形验证码加载失败，请刷新或检查后端服务',
+      );
     } finally {
       setLoading(false);
     }
-    // 仅依赖稳定的 setState；父组件传入的 onChange 可能每次渲染是新引用
+    // 这里只依赖稳定的 setState；父组件传入的 onChange 可能每次渲染都是新引用
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -49,14 +59,16 @@ export function CaptchaField({
             draggable={false}
           />
         ) : (
-          <div className="captcha-image captcha-image-placeholder">加载中…</div>
+          <div className="captcha-image captcha-image-placeholder">
+            {loading ? '加载中...' : error ? '加载失败' : '加载中...'}
+          </div>
         )}
         <button
           type="button"
           className="ghost captcha-refresh"
           onClick={() => void refresh()}
           disabled={disabled || loading}
-          title="换一张"
+          title="刷新验证码"
         >
           刷新
         </button>
@@ -67,11 +79,12 @@ export function CaptchaField({
         placeholder="图形验证码（4位数字或小写字母）"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
+        disabled={disabled || (!image && !loading)}
         maxLength={4}
         autoComplete="off"
         required
       />
+      {error ? <p className="error">{error}</p> : null}
     </div>
   );
 }

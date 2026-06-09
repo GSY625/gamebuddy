@@ -10,6 +10,7 @@ import { CaptchaService } from './captcha.service';
 import { EmailCodeRateLimitService } from './email-code-rate-limit.service';
 import { getJwtSecret } from '../common/runtime-env';
 import { AuthSessionService } from './auth-session.service';
+import { MailQueueService } from './mail-queue.service';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { AuthSessionService } from './auth-session.service';
     AuthService,
     AuthSessionService,
     MailService,
+    MailQueueService,
     JwtStrategy,
     CaptchaService,
     EmailCodeRateLimitService,

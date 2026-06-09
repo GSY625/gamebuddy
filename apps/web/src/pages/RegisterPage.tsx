@@ -29,6 +29,11 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!captchaId.trim()) {
+      setError('图形验证码尚未加载成功，请先点刷新重试');
+      return;
+    }
+
     if (!captchaCode.trim()) {
       setError('请输入图形验证码');
       return;

@@ -18,4 +18,11 @@ export class BusinessLogService {
       ...payload,
     });
   }
+
+  error(event: string, payload: Record<string, unknown> = {}) {
+    this.logger.error(event, {
+      category: 'business',
+      ...payload,
+    });
+  }
 }

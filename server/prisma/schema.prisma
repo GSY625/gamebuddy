@@ -103,6 +103,8 @@ model UserGameProfile {
   game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
 
   @@index([userId, gameId])
+  @@index([userId, updatedAt])
+  @@index([gameId, publishedToSquare, updatedAt])
   @@map("user_game_profiles")
 }
 
@@ -243,6 +245,8 @@ model FriendRequest {
   receiver User @relation("FriendRequestReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
 
   @@unique([senderId, receiverId])
+  @@index([receiverId, status, createdAt])
+  @@index([senderId, status, createdAt])
   @@map("friend_requests")
 }
 
@@ -256,6 +260,8 @@ model Friendship {
   friend User @relation("FriendshipFriend", fields: [friendId], references: [id], onDelete: Cascade)
 
   @@unique([userId, friendId])
+  @@index([userId, createdAt])
+  @@index([friendId, createdAt])
   @@map("friendships")
 }
 
@@ -270,6 +276,7 @@ model ChatMessage {
   room ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
   user User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([roomId, createdAt])
   @@map("chat_messages")
 }
 
@@ -383,6 +390,8 @@ model Block {
   blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
 
   @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
   @@map("blocks")
 }
 
@@ -393,6 +402,8 @@ model EmailVerification {
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([email, code, createdAt])
+  @@index([expiresAt])
   @@map("email_verifications")
 }
 
