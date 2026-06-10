@@ -21,6 +21,8 @@ type AdminActor = {
   nickname: string;
 };
 
+type ReviewAction = NonNullable<ReviewReportDto['actionTaken']> | 'none';
+
 const RESTRICTION_LABELS: Record<
   SetUserRestrictionDto['type'],
   string
@@ -59,6 +61,38 @@ export class AdminService {
     });
   }
 
+  private async notifyAdminAction(
+    userId: string,
+    title: string,
+    message: string,
+    refId: string,
+  ) {
+    await this.notifications.create(userId, {
+      type: 'admin_action',
+      title,
+      message,
+      link: '/notifications',
+      refId,
+    });
+  }
+
+  private async notifyReportResult(
+    reporterId: string,
+    reportId: string,
+    reviewStatus: ReviewReportDto['reviewStatus'],
+  ) {
+    await this.notifications.create(reporterId, {
+      type: 'report_result',
+      title: reviewStatus === 'resolved' ? '举报已处理' : '举报未通过',
+      message:
+        reviewStatus === 'resolved'
+          ? '你提交的举报已经处理，感谢帮助我们维护社区环境。'
+          : '你提交的举报经审核暂未通过，感谢你的反馈。',
+      link: '/notifications',
+      refId: reportId,
+    });
+  }
+
   private assertCanManageUser(actor: AdminActor, target: { id: string; role: string }) {
     if (actor.id === target.id) {
       throw new BadRequestException('不能操作自己的管理员账号');
@@ -68,6 +102,94 @@ export class AdminService {
     }
     if (target.role === 'admin' && actor.role !== 'superAdmin') {
       throw new ForbiddenException('仅超级管理员可修改管理员账号');
+    }
+  }
+
+  private validateReviewAction(
+    actor: AdminActor,
+    report: {
+      targetType: string | null;
+      reported: { id: string; role: string };
+    },
+    nextAction: ReviewAction,
+  ) {
+    if (nextAction === 'ban') {
+      this.assertCanManageUser(actor, report.reported);
+    }
+
+    if (nextAction === 'hide_lfg' && report.targetType !== 'lfg_post') {
+      throw new BadRequestException('当前举报对象不支持下架招募内容');
+    }
+  }
+
+  private async applyResolvedReviewAction(
+    tx: Pick<PrismaService, 'user' | 'lfgPost' | 'adminActionLog'>,
+    actorId: string,
+    report: {
+      reported: { id: string; isBanned: boolean };
+      targetId: string | null;
+    },
+    reportId: string,
+    nextAction: ReviewAction,
+    reviewNote?: string,
+  ) {
+    if (nextAction === 'ban' && !report.reported.isBanned) {
+      await tx.user.update({
+        where: { id: report.reported.id },
+        data: { isBanned: true },
+      });
+      await tx.adminActionLog.create({
+        data: {
+          actorId,
+          action: 'user_banned',
+          targetType: 'user',
+          targetId: report.reported.id,
+          note: reviewNote?.trim() || `由举报 ${reportId} 触发`,
+        },
+      });
+    }
+
+    if (nextAction === 'hide_lfg' && report.targetId) {
+      await tx.lfgPost.update({
+        where: { id: report.targetId },
+        data: { status: 'hidden_by_admin' },
+      });
+      await tx.adminActionLog.create({
+        data: {
+          actorId,
+          action: 'lfg_hidden_by_admin',
+          targetType: 'lfg_post',
+          targetId: report.targetId,
+          note: reviewNote?.trim() || `由举报 ${reportId} 触发`,
+        },
+      });
+    }
+  }
+
+  private async notifyResolvedReviewAction(
+    report: {
+      reported: { id: string };
+      targetId: string | null;
+    },
+    reportId: string,
+    nextAction: ReviewAction,
+  ) {
+    if (nextAction === 'ban') {
+      await this.notifyAdminAction(
+        report.reported.id,
+        '账号已被封禁',
+        '由于收到并核实违规举报，你的账号已被管理员封禁。',
+        reportId,
+      );
+    }
+
+    if (nextAction === 'hide_lfg') {
+      await this.notifyAdminAction(
+        report.reported.id,
+        '招募内容已被下架',
+        '你发布的招募内容因违规举报核实成立，已被管理员下架。',
+        report.targetId ?? reportId,
+      );
     }
   }
 
@@ -217,14 +339,8 @@ export class AdminService {
     });
     if (!report) throw new NotFoundException('举报记录不存在');
 
-    const nextAction = dto.actionTaken ?? 'none';
-
-    if (nextAction === 'ban') {
-      this.assertCanManageUser(actor, report.reported);
-    }
-    if (nextAction === 'hide_lfg' && report.targetType !== 'lfg_post') {
-      throw new BadRequestException('当前举报对象不支持下架招募内容');
-    }
+    const nextAction: ReviewAction = dto.actionTaken ?? 'none';
+    this.validateReviewAction(actor, report, nextAction);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.report.update({
@@ -249,68 +365,22 @@ export class AdminService {
         },
       });
 
-      if (dto.reviewStatus === 'resolved' && nextAction === 'ban' && !report.reported.isBanned) {
-        await tx.user.update({
-          where: { id: report.reported.id },
-          data: { isBanned: true },
-        });
-        await tx.adminActionLog.create({
-          data: {
-            actorId: actor.id,
-            action: 'user_banned',
-            targetType: 'user',
-            targetId: report.reported.id,
-            note: dto.reviewNote?.trim() || `由举报 ${id} 触发`,
-          },
-        });
-      }
-
-      if (dto.reviewStatus === 'resolved' && nextAction === 'hide_lfg' && report.targetId) {
-        await tx.lfgPost.update({
-          where: { id: report.targetId },
-          data: { status: 'hidden_by_admin' },
-        });
-        await tx.adminActionLog.create({
-          data: {
-            actorId: actor.id,
-            action: 'lfg_hidden_by_admin',
-            targetType: 'lfg_post',
-            targetId: report.targetId,
-            note: dto.reviewNote?.trim() || `由举报 ${id} 触发`,
-          },
-        });
+      if (dto.reviewStatus === 'resolved') {
+        await this.applyResolvedReviewAction(
+          tx,
+          actor.id,
+          report,
+          id,
+          nextAction,
+          dto.reviewNote,
+        );
       }
     });
 
-    await this.notifications.create(report.reporter.id, {
-      type: 'report_result',
-      title: dto.reviewStatus === 'resolved' ? '举报已处理' : '举报未通过',
-      message:
-        dto.reviewStatus === 'resolved'
-          ? '你提交的举报已经处理，感谢帮助我们维护社区环境。'
-          : '你提交的举报经审核暂未通过，感谢你的反馈。',
-      link: '/notifications',
-      refId: id,
-    });
+    await this.notifyReportResult(report.reporter.id, id, dto.reviewStatus);
 
-    if (dto.reviewStatus === 'resolved' && nextAction === 'ban') {
-      await this.notifications.create(report.reported.id, {
-        type: 'admin_action',
-        title: '账号已被封禁',
-        message: '由于收到并核实违规举报，你的账号已被管理员封禁。',
-        link: '/notifications',
-        refId: id,
-      });
-    }
-
-    if (dto.reviewStatus === 'resolved' && nextAction === 'hide_lfg') {
-      await this.notifications.create(report.reported.id, {
-        type: 'admin_action',
-        title: '招募内容已被下架',
-        message: '你发布的招募内容因违规举报核实成立，已被管理员下架。',
-        link: '/notifications',
-        refId: report.targetId ?? id,
-      });
+    if (dto.reviewStatus === 'resolved') {
+      await this.notifyResolvedReviewAction(report, id, nextAction);
     }
 
     this.businessLog.log('admin.report.reviewed', {
@@ -479,15 +549,14 @@ export class AdminService {
       dto.note,
     );
 
-    await this.notifications.create(userId, {
-      type: 'admin_action',
-      title: dto.banned ? '账号已被封禁' : '账号已恢复使用',
-      message: dto.banned
+    await this.notifyAdminAction(
+      userId,
+      dto.banned ? '账号已被封禁' : '账号已恢复使用',
+      dto.banned
         ? '你的账号已被管理员封禁，如有疑问请联系平台。'
         : '你的账号已被管理员解除封禁，可重新登录使用。',
-      link: '/notifications',
-      refId: userId,
-    });
+      userId,
+    );
 
     this.businessLog.log('admin.user.ban_changed', {
       actorId: actor.id,
@@ -533,15 +602,14 @@ export class AdminService {
       `${dto.type}${dto.note ? `：${dto.note}` : ''}`,
     );
 
-    await this.notifications.create(userId, {
-      type: 'admin_action',
-      title: dto.enabled ? '功能已被限制' : '功能限制已解除',
-      message: dto.enabled
+    await this.notifyAdminAction(
+      userId,
+      dto.enabled ? '功能已被限制' : '功能限制已解除',
+      dto.enabled
         ? `你已被限制${RESTRICTION_LABELS[dto.type]}。`
         : `你被限制的“${RESTRICTION_LABELS[dto.type]}”功能已恢复。`,
-      link: '/notifications',
-      refId: userId,
-    });
+      userId,
+    );
 
     this.businessLog.log('admin.user.restriction_changed', {
       actorId: actor.id,

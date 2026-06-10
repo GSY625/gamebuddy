@@ -6,6 +6,7 @@ import { PageHeader } from '../components/PageHeader';
 import { ThemeToast } from '../components/ThemeToast';
 import { UserAvatar } from '../components/UserAvatar';
 import { useAuth } from '../context/AuthContext';
+import { prefetchDirectConversation } from '../features/directMessages/cache';
 import { usePlayerSafety } from '../hooks/usePlayerSafety';
 
 type PublicUser = {
@@ -28,6 +29,7 @@ export default function UserProfilePage() {
   const [requestId, setRequestId] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState('');
+  const [openingConversation, setOpeningConversation] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
@@ -68,6 +70,19 @@ export default function UserProfilePage() {
       setToast('已添加好友');
     } catch (err) {
       safety.showAlert(err instanceof Error ? err.message : '操作失败');
+    }
+  };
+
+  const openDirectMessage = async () => {
+    if (!profile) return;
+    setOpeningConversation(true);
+    try {
+      await prefetchDirectConversation(profile.id);
+      nav(`/messages/${profile.id}`);
+    } catch (err) {
+      safety.showAlert(err instanceof Error ? err.message : '打开私信失败');
+    } finally {
+      setOpeningConversation(false);
     }
   };
 
@@ -124,9 +139,10 @@ export default function UserProfilePage() {
               <button
                 type="button"
                 className="ghost"
-                onClick={() => nav(`/messages/${profile.id}`)}
+                disabled={openingConversation}
+                onClick={() => void openDirectMessage()}
               >
-                私信
+                {openingConversation ? '打开中...' : '私信'}
               </button>
             </>
           )}

@@ -16,8 +16,11 @@ type Party = {
   chatRoom?: { id: string; roomCode?: string; name?: string; unreadCount?: number };
 };
 
+let partiesCache: Party[] | null = null;
+
 export default function PartiesPage() {
-  const [parties, setParties] = useState<Party[]>([]);
+  const [parties, setParties] = useState<Party[]>(() => partiesCache ?? []);
+  const [loading, setLoading] = useState(() => partiesCache === null);
   const [createOpen, setCreateOpen] = useState(false);
   const [roomName, setRoomName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -25,7 +28,21 @@ export default function PartiesPage() {
   const nav = useNavigate();
   const { guard } = useOnlineGuard();
 
-  const load = () => api.listParties().then((data) => setParties(data as Party[]));
+  const syncParties = (rows: Party[]) => {
+    partiesCache = rows;
+    setParties(rows);
+  };
+
+  const load = async () => {
+    try {
+      const data = (await api.listParties()) as Party[];
+      syncParties(data);
+    } catch (err) {
+      setAlert(err instanceof Error ? err.message : '加载队伍失败');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     void load();
@@ -67,7 +84,9 @@ export default function PartiesPage() {
           创建聊天室
         </button>
       </PageHeader>
-      {parties.length === 0 ? (
+      {loading ? (
+        <div className="post-card glass-panel loading">加载队伍中...</div>
+      ) : parties.length === 0 ? (
         <EmptyState
           variant="party"
           title="还没有队伍呢"
@@ -75,26 +94,22 @@ export default function PartiesPage() {
         />
       ) : (
         <ul className="post-list">
-          {parties.map((p) => {
-            const unread = p.chatRoom?.unreadCount ?? 0;
+          {parties.map((party) => {
+            const unread = party.chatRoom?.unreadCount ?? 0;
             return (
-              <li key={p.id} className="post-card glass-panel">
-                <p>
-                  成员：{p.members.map((m) => m.user.nickname).join('、')}
-                </p>
-                {p.voiceHint && (
-                  <p className="voice-hint">语音房间：{p.voiceHint}</p>
-                )}
-                {p.chatRoom && (
+              <li key={party.id} className="post-card glass-panel">
+                <p>成员: {party.members.map((member) => member.user.nickname).join('、')}</p>
+                {party.voiceHint && <p className="voice-hint">语音房间: {party.voiceHint}</p>}
+                {party.chatRoom && (
                   <>
-                    {p.chatRoom.roomCode && (
+                    {party.chatRoom.roomCode && (
                       <p className="muted small">
-                        聊天室：{p.chatRoom.name ?? '未命名'} · ID{' '}
-                        <code className="room-code-inline">{p.chatRoom.roomCode}</code>
+                        聊天室: {party.chatRoom.name ?? '未命名'} · ID{' '}
+                        <code className="room-code-inline">{party.chatRoom.roomCode}</code>
                       </p>
                     )}
                     <div className="party-chat-entry">
-                      <Link to={`/chat/${p.chatRoom.id}`} className="btn-link">
+                      <Link to={`/chat/${party.chatRoom.id}`} className="btn-link">
                         进入聊天室
                       </Link>
                       {unread > 0 && (
@@ -126,7 +141,7 @@ export default function PartiesPage() {
               disabled={creating}
               onClick={() => void handleCreate()}
             >
-              {creating ? '创建中…' : '创建并进入'}
+              {creating ? '创建中...' : '创建并进入'}
             </button>
           </>
         }
@@ -136,8 +151,8 @@ export default function PartiesPage() {
           <span className="form-field-label">聊天室名称（可选）</span>
           <input
             value={roomName}
-            onChange={(e) => setRoomName(e.target.value)}
-            placeholder="例：今晚开黑"
+            onChange={(event) => setRoomName(event.target.value)}
+            placeholder="例如：今晚开黑"
             maxLength={32}
           />
         </div>

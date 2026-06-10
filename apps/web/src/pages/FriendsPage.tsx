@@ -6,6 +6,7 @@ import { EmptyState } from '../components/EmptyState';
 import { UserAvatarLink } from '../components/UserAvatarLink';
 import { ThemeToast } from '../components/ThemeToast';
 import { ThemeConfirmModal } from '../components/ThemeConfirmModal';
+import { prefetchDirectConversation } from '../features/directMessages/cache';
 
 type FriendRow = {
   id: string;
@@ -26,6 +27,13 @@ type PendingDelete = {
   nickname: string;
 };
 
+type FriendsPageCache = {
+  friends: FriendRow[];
+  requests: RequestRow[];
+};
+
+let friendsPageCache: FriendsPageCache | null = null;
+
 function presenceLabel(status: FriendRow['presenceStatus']) {
   if (status === 'online') return '在线';
   if (status === 'invisible') return '隐身';
@@ -39,17 +47,35 @@ function formatFriendTime(value?: string | null) {
 
 export default function FriendsPage() {
   const nav = useNavigate();
-  const [friends, setFriends] = useState<FriendRow[]>([]);
-  const [requests, setRequests] = useState<RequestRow[]>([]);
+  const [friends, setFriends] = useState<FriendRow[]>(() => friendsPageCache?.friends ?? []);
+  const [requests, setRequests] = useState<RequestRow[]>(
+    () => friendsPageCache?.requests ?? [],
+  );
+  const [loading, setLoading] = useState(() => friendsPageCache === null);
   const [toast, setToast] = useState('');
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [openingFriendId, setOpeningFriendId] = useState<string | null>(null);
+
+  const syncRows = useCallback((nextFriends: FriendRow[], nextRequests: RequestRow[]) => {
+    friendsPageCache = { friends: nextFriends, requests: nextRequests };
+    setFriends(nextFriends);
+    setRequests(nextRequests);
+  }, []);
 
   const load = useCallback(async () => {
-    const [f, r] = await Promise.all([api.listFriends(), api.listFriendRequests()]);
-    setFriends(f as FriendRow[]);
-    setRequests(r as RequestRow[]);
-  }, []);
+    try {
+      const [friendRows, requestRows] = await Promise.all([
+        api.listFriends(),
+        api.listFriendRequests(),
+      ]);
+      syncRows(friendRows as FriendRow[], requestRows as RequestRow[]);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : '加载好友失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [syncRows]);
 
   useEffect(() => {
     void load();
@@ -71,7 +97,8 @@ export default function FriendsPage() {
 
     try {
       await api.removeFriend(pendingDelete.friendId);
-      setFriends((prev) => prev.filter((f) => f.friend.id !== pendingDelete.friendId));
+      const nextFriends = friends.filter((item) => item.friend.id !== pendingDelete.friendId);
+      syncRows(nextFriends, requests);
       setToast(`已删除好友「${pendingDelete.nickname}」`);
       setPendingDelete(null);
     } catch (err) {
@@ -80,6 +107,21 @@ export default function FriendsPage() {
       setDeleting(false);
     }
   };
+
+  const openDirectMessage = async (friendId: string) => {
+    setOpeningFriendId(friendId);
+    try {
+      await prefetchDirectConversation(friendId);
+      nav(`/messages/${friendId}`);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : '打开私信失败');
+    } finally {
+      setOpeningFriendId(null);
+    }
+  };
+
+  const requestCountLabel = loading && friendsPageCache === null ? '...' : requests.length;
+  const friendCountLabel = loading && friendsPageCache === null ? '...' : friends.length;
 
   return (
     <div className="page-wrap">
@@ -101,28 +143,30 @@ export default function FriendsPage() {
       />
 
       <section className="glass-panel friends-section">
-        <h3>好友申请 ({requests.length})</h3>
-        {requests.length === 0 ? (
+        <h3>好友申请 ({requestCountLabel})</h3>
+        {loading && friendsPageCache === null ? (
+          <div className="loading">加载好友申请中...</div>
+        ) : requests.length === 0 ? (
           <p className="muted small">暂无待处理申请</p>
         ) : (
           <ul className="friend-request-list">
-            {requests.map((r) => (
-              <li key={r.id} className="friend-request-item">
+            {requests.map((request) => (
+              <li key={request.id} className="friend-request-item">
                 <UserAvatarLink
-                  userId={r.sender.id}
-                  url={r.sender.avatarUrl}
-                  name={r.sender.nickname}
+                  userId={request.sender.id}
+                  url={request.sender.avatarUrl}
+                  name={request.sender.nickname}
                   size={40}
                 />
-                <span>{r.sender.nickname}</span>
+                <span>{request.sender.nickname}</span>
                 <div className="friend-request-actions">
-                  <button type="button" onClick={() => void resolve(r.id, true)}>
+                  <button type="button" onClick={() => void resolve(request.id, true)}>
                     同意
                   </button>
                   <button
                     type="button"
                     className="ghost"
-                    onClick={() => void resolve(r.id, false)}
+                    onClick={() => void resolve(request.id, false)}
                   >
                     拒绝
                   </button>
@@ -134,8 +178,10 @@ export default function FriendsPage() {
       </section>
 
       <section className="glass-panel friends-section">
-        <h3>我的好友 ({friends.length})</h3>
-        {friends.length === 0 ? (
+        <h3>我的好友 ({friendCountLabel})</h3>
+        {loading && friendsPageCache === null ? (
+          <div className="loading">加载好友列表中...</div>
+        ) : friends.length === 0 ? (
           <EmptyState
             variant="wave"
             title="还没有好友"
@@ -143,45 +189,45 @@ export default function FriendsPage() {
           />
         ) : (
           <ul className="friend-list">
-            {friends.map((f) => (
-              <li key={f.id} className="friend-list-item">
+            {friends.map((friend) => (
+              <li key={friend.id} className="friend-list-item">
                 <UserAvatarLink
-                  userId={f.friend.id}
-                  url={f.friend.avatarUrl}
-                  name={f.friend.nickname}
+                  userId={friend.friend.id}
+                  url={friend.friend.avatarUrl}
+                  name={friend.friend.nickname}
                   size={40}
                 />
                 <div className="friend-list-meta">
                   <div className="friend-list-name-row">
-                    <span>{f.friend.nickname}</span>
-                    <span
-                      className={`friend-presence-badge ${f.presenceStatus}`}
-                    >
-                      {presenceLabel(f.presenceStatus)}
+                    <span>{friend.friend.nickname}</span>
+                    <span className={`friend-presence-badge ${friend.presenceStatus}`}>
+                      {presenceLabel(friend.presenceStatus)}
                     </span>
                   </div>
                   <p className="muted small friend-list-preview">
-                    {f.lastMessagePreview || '先发一句私信，把常玩的时间和模式约起来'}
+                    {friend.lastMessagePreview ||
+                      '先发一句私信，把常玩的时间和模式约起来'}
                   </p>
                   <p className="muted small friend-list-time">
-                    最近私信：{formatFriendTime(f.lastMessageAt)}
+                    最近私信: {formatFriendTime(friend.lastMessageAt)}
                   </p>
                 </div>
                 <button
                   type="button"
                   className="ghost small-btn"
-                  onClick={() => nav(`/messages/${f.friend.id}`)}
+                  disabled={openingFriendId === friend.friend.id}
+                  onClick={() => void openDirectMessage(friend.friend.id)}
                 >
-                  私信
+                  {openingFriendId === friend.friend.id ? '打开中...' : '私信'}
                 </button>
                 <button
                   type="button"
                   className="friend-delete-btn"
-                  aria-label={`删除好友 ${f.friend.nickname}`}
+                  aria-label={`删除好友 ${friend.friend.nickname}`}
                   onClick={() =>
                     setPendingDelete({
-                      friendId: f.friend.id,
-                      nickname: f.friend.nickname,
+                      friendId: friend.friend.id,
+                      nickname: friend.friend.nickname,
                     })
                   }
                 >

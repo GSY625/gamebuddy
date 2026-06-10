@@ -1,4 +1,4 @@
-import { StrictMode } from 'react';
+import { Fragment, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
@@ -14,8 +14,10 @@ resetBodyScroll();
 destroyOnboardingDriver();
 initSentry();
 
+const RootContainer = import.meta.env.DEV ? Fragment : StrictMode;
+
 const appTree = (
-  <StrictMode>
+  <RootContainer>
     <BrowserRouter>
       <AuthProvider>
         <OnboardingProvider>
@@ -23,7 +25,7 @@ const appTree = (
         </OnboardingProvider>
       </AuthProvider>
     </BrowserRouter>
-  </StrictMode>
+  </RootContainer>
 );
 
 createRoot(document.getElementById('root')!).render(

@@ -617,7 +617,7 @@ export class ChatGateway
     }
 
     try {
-      await this.assertNotDuplicateMessage('dm', data.receiverId, senderId, data.content);
+      // Allow repeated direct-message content; only rate limiting should apply here.
     } catch (error) {
       const message = this.getRateLimitMessage(
         error,
@@ -632,7 +632,6 @@ export class ChatGateway
       data.receiverId,
       data.content,
     );
-    await this.rememberMessageFingerprint('dm', data.receiverId, senderId, data.content);
 
     await this.emitDirectMessageEvent(result.threadId, 'dm:message', {
       threadId: result.threadId,

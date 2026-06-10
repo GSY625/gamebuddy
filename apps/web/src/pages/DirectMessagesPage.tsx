@@ -10,37 +10,26 @@ import { ThemeToast } from '../components/ThemeToast';
 import { UserAvatar } from '../components/UserAvatar';
 import { UserAvatarLink } from '../components/UserAvatarLink';
 import { useAuth } from '../context/AuthContext';
+import {
+  getCachedDirectConversationDetail,
+  getCachedDirectConversations,
+  hasCachedDirectConversationDetail,
+  prefetchDirectConversation,
+  setCachedDirectConversationDetail,
+  setCachedDirectConversations,
+  updateCachedDirectConversationMessages,
+  warmDirectConversationDetails,
+  type DirectConversation,
+  type DirectMessage,
+} from '../features/directMessages/cache';
 import { useOnlineGuard } from '../hooks/useOnlineGuard';
 import { WS_URL } from '../utils/runtimeEnv';
-
-type Conversation = {
-  threadId: string;
-  friend: { id: string; nickname: string; avatarUrl?: string | null };
-  unreadCount: number;
-  createdAt: string;
-  lastMessageAt: string;
-  lastMessage: {
-    id: string;
-    content: string;
-    createdAt: string;
-    senderId: string;
-    sender: { id: string; nickname: string; avatarUrl?: string | null };
-  } | null;
-};
-
-type DirectMessage = {
-  id: string;
-  content: string;
-  createdAt: string;
-  senderId: string;
-  sender: { id: string; nickname: string; avatarUrl?: string | null };
-};
 
 const quickDmPhrases = [
   '晚上一起开黑吗？',
   '你一般几点在线？',
   '这把想打什么模式？',
-  '要不要直接拉个房间语音？',
+  '要不要直接拉一个房间语音？',
 ];
 
 export default function DirectMessagesPage() {
@@ -50,43 +39,62 @@ export default function DirectMessagesPage() {
   const nav = useNavigate();
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConversation, setActiveConversation] = useState<Conversation | null>(
-    null,
+  const cachedDetail = friendId ? getCachedDirectConversationDetail(friendId) : null;
+  const [conversations, setConversations] = useState<DirectConversation[]>(
+    () => getCachedDirectConversations() ?? [],
   );
-  const [messages, setMessages] = useState<DirectMessage[]>([]);
+  const [activeConversation, setActiveConversation] = useState<DirectConversation | null>(
+    () => cachedDetail?.conversation ?? null,
+  );
+  const [messages, setMessages] = useState<DirectMessage[]>(() => cachedDetail?.messages ?? []);
   const [text, setText] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [loading, setLoading] = useState(() => getCachedDirectConversations() === null);
+  const [messagesLoading, setMessagesLoading] = useState(
+    () => Boolean(friendId && !cachedDetail),
+  );
+  const [openingFriendId, setOpeningFriendId] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const [alert, setAlert] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
 
-  const loadConversations = useCallback(async () => {
-    const rows = (await api.listDirectConversations()) as Conversation[];
+  const syncConversations = useCallback((rows: DirectConversation[]) => {
+    setCachedDirectConversations(rows);
     setConversations(rows);
-    return rows;
   }, []);
 
-  const mergeConversation = useCallback((conversation: Conversation) => {
+  const mergeConversation = useCallback((conversation: DirectConversation) => {
     setConversations((prev) => {
-      const rest = prev.filter((item) => item.threadId !== conversation.threadId);
-      return [conversation, ...rest];
+      const base = prev.length > 0 ? prev : getCachedDirectConversations() ?? [];
+      const rest = base.filter((item) => item.threadId !== conversation.threadId);
+      const next = [conversation, ...rest];
+      setCachedDirectConversations(next);
+      return next;
     });
+
+    const detail = getCachedDirectConversationDetail(conversation.friend.id);
+    if (detail) {
+      setCachedDirectConversationDetail(conversation.friend.id, {
+        conversation,
+        messages: detail.messages,
+      });
+    }
   }, []);
+
+  const loadConversations = useCallback(async () => {
+    const rows = (await api.listDirectConversations()) as DirectConversation[];
+    syncConversations(rows);
+    warmDirectConversationDetails(rows);
+    return rows;
+  }, [syncConversations]);
 
   const loadActiveConversation = useCallback(
     async (targetFriendId: string) => {
       setMessagesLoading(true);
       try {
-        const [conversation, rows] = await Promise.all([
-          api.getDirectConversation(targetFriendId),
-          api.getDirectMessages(targetFriendId),
-        ]);
-        const currentConversation = conversation as Conversation;
-        setActiveConversation(currentConversation);
-        setMessages([...(rows as DirectMessage[])].reverse());
-        mergeConversation({ ...currentConversation, unreadCount: 0 });
+        const detail = await prefetchDirectConversation(targetFriendId);
+        setActiveConversation(detail.conversation);
+        setMessages(detail.messages);
+        mergeConversation({ ...detail.conversation, unreadCount: 0 });
         await api.markDirectConversationRead(targetFriendId);
       } catch (err) {
         setAlert(err instanceof Error ? err.message : '加载私信失败');
@@ -109,9 +117,24 @@ export default function DirectMessagesPage() {
     if (!friendId) {
       setActiveConversation(null);
       setMessages([]);
+      setMessagesLoading(false);
       return;
     }
-    void loadActiveConversation(friendId);
+
+    const cached = getCachedDirectConversationDetail(friendId);
+    const listedConversation =
+      getCachedDirectConversations()?.find((item) => item.friend.id === friendId) ?? null;
+
+    if (cached) {
+      setActiveConversation(cached.conversation);
+      setMessages(cached.messages);
+      setMessagesLoading(false);
+    } else {
+      setActiveConversation(listedConversation);
+      setMessages([]);
+      setMessagesLoading(true);
+      void loadActiveConversation(friendId);
+    }
   }, [friendId, loadActiveConversation]);
 
   useEffect(() => {
@@ -121,8 +144,8 @@ export default function DirectMessagesPage() {
     socketRef.current = socket;
 
     socket.on('dm:message', (payload: { threadId: string; message: DirectMessage }) => {
-      setConversations((prev) =>
-        prev
+      setConversations((prev) => {
+        const next = prev
           .map((item) => {
             if (item.threadId !== payload.threadId) return item;
             const unreadCount =
@@ -147,15 +170,26 @@ export default function DirectMessagesPage() {
           .sort(
             (a, b) =>
               new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
-          ),
-      );
+          );
+
+        setCachedDirectConversations(next);
+        return next;
+      });
 
       if (activeConversation?.threadId === payload.threadId) {
-        setMessages((prev) =>
-          prev.some((item) => item.id === payload.message.id)
-            ? prev
-            : [...prev, payload.message],
-        );
+        setMessages((prev) => {
+          if (prev.some((item) => item.id === payload.message.id)) {
+            return prev;
+          }
+
+          const detail = updateCachedDirectConversationMessages(
+            activeConversation.friend.id,
+            (current) => [...current, payload.message],
+          );
+
+          return detail?.messages ?? [...prev, payload.message];
+        });
+
         if (payload.message.senderId !== user.id) {
           void api.markDirectConversationRead(activeConversation.friend.id);
         }
@@ -174,13 +208,7 @@ export default function DirectMessagesPage() {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [
-    activeConversation?.friend.id,
-    activeConversation?.threadId,
-    forceLogout,
-    loadConversations,
-    user,
-  ]);
+  }, [activeConversation, forceLogout, loadConversations, user]);
 
   useEffect(() => {
     if (!activeConversation?.threadId || !socketRef.current) return;
@@ -190,6 +218,27 @@ export default function DirectMessagesPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const openConversation = useCallback(
+    async (conversation: DirectConversation) => {
+      if (friendId === conversation.friend.id) return;
+
+      if (!hasCachedDirectConversationDetail(conversation.friend.id)) {
+        setOpeningFriendId(conversation.friend.id);
+        try {
+          await prefetchDirectConversation(conversation.friend.id);
+        } catch (err) {
+          setAlert(err instanceof Error ? err.message : '加载会话失败');
+          return;
+        } finally {
+          setOpeningFriendId(null);
+        }
+      }
+
+      nav(`/messages/${conversation.friend.id}`);
+    },
+    [friendId, nav],
+  );
 
   const send = () => {
     if (!text.trim() || !activeConversation || !socketRef.current) return;
@@ -219,21 +268,18 @@ export default function DirectMessagesPage() {
   };
 
   const activeThreadId = activeConversation?.threadId;
-
   const selectedConversation = useMemo(() => {
     if (activeThreadId) {
       return (
-        conversations.find((item) => item.threadId === activeThreadId) ??
-        activeConversation
+        conversations.find((item) => item.threadId === activeThreadId) ?? activeConversation
       );
     }
     if (!friendId) return null;
     return conversations.find((item) => item.friend.id === friendId) ?? null;
   }, [activeConversation, activeThreadId, conversations, friendId]);
 
-  if (loading) {
-    return <div className="loading page-wrap">加载私信中...</div>;
-  }
+  const conversationCountLabel =
+    loading && getCachedDirectConversations() === null ? '...' : `${conversations.length} 个`;
 
   return (
     <div className="page-wrap">
@@ -247,17 +293,19 @@ export default function DirectMessagesPage() {
 
       <PageHeader
         title="好友私信"
-        subtitle="和已添加的好友单独交流，约时间、约模式、约语音都会更高效"
+        subtitle="和已添加好友单独交流，约时间、约模式、约语音都会更高效"
       />
 
       <div className="dm-page">
         <aside className="glass-panel dm-sidebar">
           <div className="dm-sidebar-head">
             <h3>最近会话</h3>
-            <span className="muted small">{conversations.length} 个</span>
+            <span className="muted small">{conversationCountLabel}</span>
           </div>
 
-          {conversations.length === 0 ? (
+          {loading && getCachedDirectConversations() === null ? (
+            <div className="loading dm-panel-loading">加载会话列表中...</div>
+          ) : conversations.length === 0 ? (
             <EmptyState
               variant="wave"
               title="还没有私信会话"
@@ -265,31 +313,37 @@ export default function DirectMessagesPage() {
             />
           ) : (
             <ul className="dm-conversation-list">
-              {conversations.map((item) => {
-                const active = selectedConversation?.threadId === item.threadId;
+              {conversations.map((conversation) => {
+                const active = selectedConversation?.threadId === conversation.threadId;
+                const opening = openingFriendId === conversation.friend.id;
                 return (
-                  <li key={item.threadId}>
+                  <li key={conversation.threadId}>
                     <button
                       type="button"
                       className={`dm-conversation-btn glass-panel ${active ? 'active' : ''}`}
-                      onClick={() => nav(`/messages/${item.friend.id}`)}
+                      onClick={() => void openConversation(conversation)}
+                      disabled={opening}
                     >
                       <UserAvatar
-                        url={item.friend.avatarUrl}
-                        name={item.friend.nickname}
+                        url={conversation.friend.avatarUrl}
+                        name={conversation.friend.nickname}
                         size={42}
                       />
                       <div className="dm-conversation-meta">
                         <div className="dm-conversation-name-row">
-                          <strong>{item.friend.nickname}</strong>
-                          {item.unreadCount > 0 && (
+                          <strong>{conversation.friend.nickname}</strong>
+                          {conversation.unreadCount > 0 && (
                             <span className="dm-unread-badge">
-                              {item.unreadCount > 99 ? '99+' : item.unreadCount}
+                              {conversation.unreadCount > 99
+                                ? '99+'
+                                : conversation.unreadCount}
                             </span>
                           )}
                         </div>
                         <p className="muted small dm-conversation-preview">
-                          {item.lastMessage?.content || '点击开始聊天'}
+                          {opening
+                            ? '正在打开会话...'
+                            : conversation.lastMessage?.content || '点击开始聊天'}
                         </p>
                       </div>
                     </button>
@@ -310,7 +364,7 @@ export default function DirectMessagesPage() {
               />
             </div>
           ) : messagesLoading || !activeConversation ? (
-            <div className="loading">加载会话中...</div>
+            <div className="loading chat-inline-loading">加载会话中...</div>
           ) : (
             <>
               <header className="dm-chat-header">
@@ -387,8 +441,8 @@ export default function DirectMessagesPage() {
                 <ChatEmojiPicker onPick={(emoji) => setText((prev) => prev + emoji)} />
                 <input
                   value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && send()}
+                  onChange={(event) => setText(event.target.value)}
+                  onKeyDown={(event) => event.key === 'Enter' && send()}
                   placeholder="输入私信内容，和好友约时间、约模式、约语音..."
                 />
                 <button type="button" onClick={send}>

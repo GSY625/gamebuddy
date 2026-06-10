@@ -2463,12 +2463,16 @@ select option {
   grid-template-columns: 320px minmax(0, 1fr);
   gap: 1rem;
   align-items: stretch;
+  height: clamp(36rem, calc(100vh - 12.5rem), 52rem);
+  min-height: 0;
 }
 
 .dm-sidebar,
 .dm-chat {
   min-height: 68vh;
   border-radius: 18px;
+  height: 100%;
+  min-height: 0;
 }
 
 .dm-sidebar {
@@ -2476,6 +2480,7 @@ select option {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+  overflow: hidden;
 }
 
 .dm-sidebar-head {
@@ -2495,6 +2500,9 @@ select option {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .dm-conversation-btn {
@@ -2554,6 +2562,7 @@ select option {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
 }
 
 .dm-chat-header {
@@ -2602,6 +2611,7 @@ select option {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+  min-height: 0;
 }
 
 .dm-message-row {
@@ -2674,6 +2684,15 @@ select option {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.chat-inline-loading,
+.dm-panel-loading {
+  flex: 1;
+  min-height: 12rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .messages {
@@ -3212,6 +3231,7 @@ select option {
 
   .dm-page {
     grid-template-columns: 1fr;
+    height: auto;
   }
 
   .admin-metric-grid,
@@ -3235,6 +3255,15 @@ select option {
   .dm-sidebar,
   .dm-chat {
     min-height: auto;
+    height: auto;
+  }
+
+  .dm-sidebar {
+    overflow: visible;
+  }
+
+  .dm-conversation-list {
+    overflow: visible;
   }
 
   .chat-settings,

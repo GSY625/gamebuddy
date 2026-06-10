@@ -17,6 +17,8 @@ type Notification = {
   createdAt: string;
 };
 
+let notificationsCache: Notification[] | null = null;
+
 function getNotificationActionText(type: string) {
   if (type === 'friend_request') {
     return { confirm: '同意', cancel: '拒绝' };
@@ -35,8 +37,8 @@ function getNotificationActionText(type: string) {
 
 export default function NotificationsPage() {
   const nav = useNavigate();
-  const [items, setItems] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<Notification[]>(() => notificationsCache ?? []);
+  const [loading, setLoading] = useState(() => notificationsCache === null);
   const [pendingDelete, setPendingDelete] = useState<Notification | null>(null);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -44,21 +46,36 @@ export default function NotificationsPage() {
   const [toast, setToast] = useState('');
   const [actingId, setActingId] = useState<string | null>(null);
 
-  const load = () =>
-    api.listNotifications().then((data) => setItems(data as Notification[]));
+  const syncItems = (rows: Notification[]) => {
+    notificationsCache = rows;
+    setItems(rows);
+  };
+
+  const load = async () => {
+    try {
+      const data = (await api.listNotifications()) as Notification[];
+      syncItems(data);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : '加载通知失败');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    load().finally(() => setLoading(false));
+    void load();
   }, []);
 
   const openItem = async (item: Notification) => {
     if (!item.read) {
       await api.markNotificationRead(item.id);
-      setItems((prev) =>
-        prev.map((current) =>
+      setItems((prev) => {
+        const next = prev.map((current) =>
           current.id === item.id ? { ...current, read: true } : current,
-        ),
-      );
+        );
+        notificationsCache = next;
+        return next;
+      });
     }
 
     if (item.link) nav(item.link);
@@ -66,8 +83,12 @@ export default function NotificationsPage() {
 
   const markAllRead = async () => {
     await api.markAllNotificationsRead();
-    setItems((prev) => prev.map((item) => ({ ...item, read: true })));
-    setToast('已全部标为已读');
+    setItems((prev) => {
+      const next = prev.map((item) => ({ ...item, read: true }));
+      notificationsCache = next;
+      return next;
+    });
+    setToast('已全部标记为已读');
   };
 
   const handleAction = async (item: Notification, accept: boolean) => {
@@ -127,9 +148,13 @@ export default function NotificationsPage() {
     setDeleting(true);
     try {
       await api.deleteNotification(pendingDelete.id);
-      setItems((prev) => prev.filter((item) => item.id !== pendingDelete.id));
+      setItems((prev) => {
+        const next = prev.filter((item) => item.id !== pendingDelete.id);
+        notificationsCache = next;
+        return next;
+      });
       setPendingDelete(null);
-      setToast('已删除该条通知');
+      setToast('已删除这条通知');
     } finally {
       setDeleting(false);
     }
@@ -139,6 +164,7 @@ export default function NotificationsPage() {
     setDeletingAll(true);
     try {
       await api.deleteAllNotifications();
+      notificationsCache = [];
       setItems([]);
       setConfirmDeleteAll(false);
       setToast('已删除全部消息通知');
@@ -147,11 +173,9 @@ export default function NotificationsPage() {
     }
   };
 
-  if (loading) {
-    return <div className="loading page-wrap">加载通知中...</div>;
-  }
-
   const unread = items.filter((item) => !item.read).length;
+  const notificationsCountLabel =
+    loading && notificationsCache === null ? '...' : items.length;
 
   return (
     <div className="page-wrap">
@@ -207,65 +231,70 @@ export default function NotificationsPage() {
         </div>
       )}
 
-      {items.length === 0 ? (
+      {loading && notificationsCache === null ? (
+        <div className="loading page-wrap">加载通知中...</div>
+      ) : items.length === 0 ? (
         <EmptyState
           variant="search"
           title="暂无通知"
           description="有新的申请、邀约或提醒时，会第一时间出现在这里"
         />
       ) : (
-        <ul className="notification-list">
-          {items.map((item) => (
-            <li key={item.id} className="notification-list-item">
-              <button
-                type="button"
-                className={`notification-item glass-panel ${item.read ? 'read' : 'unread'}`}
-                onClick={() => void openItem(item)}
-              >
-                <div className="notification-item-head">
-                  <strong>{item.title}</strong>
-                  {!item.read && <span className="notification-dot" aria-hidden />}
-                </div>
-                <p className="muted small">{item.message}</p>
-                <time className="muted small">
-                  {new Date(item.createdAt).toLocaleString('zh-CN')}
-                </time>
-                {item.link && (
-                  <span className="notification-link-hint small">点击查看 →</span>
+        <>
+          <p className="muted small">当前通知 {notificationsCountLabel} 条</p>
+          <ul className="notification-list">
+            {items.map((item) => (
+              <li key={item.id} className="notification-list-item">
+                <button
+                  type="button"
+                  className={`notification-item glass-panel ${item.read ? 'read' : 'unread'}`}
+                  onClick={() => void openItem(item)}
+                >
+                  <div className="notification-item-head">
+                    <strong>{item.title}</strong>
+                    {!item.read && <span className="notification-dot" aria-hidden />}
+                  </div>
+                  <p className="muted small">{item.message}</p>
+                  <time className="muted small">
+                    {new Date(item.createdAt).toLocaleString('zh-CN')}
+                  </time>
+                  {item.link && (
+                    <span className="notification-link-hint small">点击查看 →</span>
+                  )}
+                </button>
+
+                {getNotificationActionText(item.type) && item.refId && (
+                  <div className="notification-action-row">
+                    <button
+                      type="button"
+                      disabled={actingId === item.id}
+                      onClick={() => void handleAction(item, true)}
+                    >
+                      {getNotificationActionText(item.type)?.confirm}
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost"
+                      disabled={actingId === item.id}
+                      onClick={() => void handleAction(item, false)}
+                    >
+                      {getNotificationActionText(item.type)?.cancel}
+                    </button>
+                  </div>
                 )}
-              </button>
 
-              {getNotificationActionText(item.type) && item.refId && (
-                <div className="notification-action-row">
-                  <button
-                    type="button"
-                    disabled={actingId === item.id}
-                    onClick={() => void handleAction(item, true)}
-                  >
-                    {getNotificationActionText(item.type)?.confirm}
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost"
-                    disabled={actingId === item.id}
-                    onClick={() => void handleAction(item, false)}
-                  >
-                    {getNotificationActionText(item.type)?.cancel}
-                  </button>
-                </div>
-              )}
-
-              <button
-                type="button"
-                className="ghost notification-delete-btn"
-                aria-label="删除通知"
-                onClick={() => setPendingDelete(item)}
-              >
-                删除
-              </button>
-            </li>
-          ))}
-        </ul>
+                <button
+                  type="button"
+                  className="ghost notification-delete-btn"
+                  aria-label="删除通知"
+                  onClick={() => setPendingDelete(item)}
+                >
+                  删除
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       <p className="muted small notifications-footer">
