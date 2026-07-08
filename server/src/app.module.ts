@@ -24,6 +24,7 @@ import { LoggingModule } from './logging/logging.module';
 import { RequestContextMiddleware } from './logging/request-context.middleware';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { HealthModule } from './health/health.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { HealthModule } from './health/health.module';
     LoggingModule,
     HealthModule,
     RateLimitModule,
+    AiModule,
     PrismaModule,
     RedisModule,
     AuthModule,

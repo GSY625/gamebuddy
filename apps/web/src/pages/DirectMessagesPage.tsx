@@ -56,6 +56,8 @@ export default function DirectMessagesPage() {
   const [toast, setToast] = useState('');
   const [alert, setAlert] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
+  const [icebreakerLoading, setIcebreakerLoading] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
 
   const syncConversations = useCallback((rows: DirectConversation[]) => {
     setCachedDirectConversations(rows);
@@ -143,6 +145,16 @@ export default function DirectMessagesPage() {
     const socket = io(WS_URL, { auth: { token: getToken() } });
     socketRef.current = socket;
 
+    socket.on('connect', () => {
+      setSocketConnected(true);
+    });
+    socket.on('disconnect', () => {
+      setSocketConnected(false);
+    });
+    socket.on('connect_error', () => {
+      setSocketConnected(false);
+      setAlert('聊天连接失败，请稍后重试');
+    });
     socket.on('dm:message', (payload: { threadId: string; message: DirectMessage }) => {
       setConversations((prev) => {
         const next = prev
@@ -207,13 +219,14 @@ export default function DirectMessagesPage() {
     return () => {
       socket.disconnect();
       socketRef.current = null;
+      setSocketConnected(false);
     };
   }, [activeConversation, forceLogout, loadConversations, user]);
 
   useEffect(() => {
-    if (!activeConversation?.threadId || !socketRef.current) return;
+    if (!activeConversation?.threadId || !socketRef.current?.connected) return;
     socketRef.current.emit('dm:join', { threadId: activeConversation.threadId });
-  }, [activeConversation?.threadId]);
+  }, [activeConversation?.threadId, socketConnected]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -241,11 +254,33 @@ export default function DirectMessagesPage() {
   );
 
   const send = () => {
-    if (!text.trim() || !activeConversation || !socketRef.current) return;
-    socketRef.current.emit('dm:message', {
-      receiverId: activeConversation.friend.id,
-      content: text.trim(),
-    });
+    const content = text.trim();
+    if (!content || !activeConversation) return;
+
+    const socket = socketRef.current;
+    if (!socket) {
+      setAlert('聊天连接尚未建立，请稍后重试');
+      return;
+    }
+
+    const emitMessage = () => {
+      socket.emit('dm:message', {
+        receiverId: activeConversation.friend.id,
+        content,
+      });
+    };
+
+    if (socket.connected) {
+      emitMessage();
+    } else {
+      socket.once('connect', () => {
+        socket.emit('dm:join', { threadId: activeConversation.threadId });
+        emitMessage();
+      });
+      socket.connect();
+      setToast('正在重连聊天服务，请稍候');
+    }
+
     setText('');
   };
 
@@ -267,6 +302,23 @@ export default function DirectMessagesPage() {
     });
   };
 
+  const createChatIcebreaker = useCallback(async () => {
+    if (!activeConversation?.threadId || icebreakerLoading) return;
+
+    setIcebreakerLoading(true);
+    try {
+      const result = await api.createChatIcebreaker({
+        threadId: activeConversation.threadId,
+        contextType: messages.length > 0 ? 'after_match' : 'first_message',
+      });
+      setText(result.message);
+      setToast('AI 破冰已插入输入框，请确认后手动发送');
+    } catch (err) {
+      setAlert(err instanceof Error ? err.message : 'AI 破冰失败');
+    } finally {
+      setIcebreakerLoading(false);
+    }
+  }, [activeConversation?.threadId, icebreakerLoading, messages.length]);
   const activeThreadId = activeConversation?.threadId;
   const selectedConversation = useMemo(() => {
     if (activeThreadId) {
@@ -445,6 +497,14 @@ export default function DirectMessagesPage() {
                   onKeyDown={(event) => event.key === 'Enter' && send()}
                   placeholder="输入私信内容，和好友约时间、约模式、约语音..."
                 />
+                <button
+                  type="button"
+                  className="ghost small-btn"
+                  disabled={icebreakerLoading}
+                  onClick={() => void createChatIcebreaker()}
+                >
+                  {icebreakerLoading ? 'AI...' : 'AI 破冰'}
+                </button>
                 <button type="button" onClick={send}>
                   发送
                 </button>

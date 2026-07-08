@@ -1,9 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { AppShell } from '../components/AppShell';
 import { MascotSvg } from '../components/MascotSvg';
 import { validateEmailInput } from '../utils/emailValidation';
+import {
+  findLoginMemoryAccount,
+  loadLoginMemory,
+  saveLoginMemory,
+  type LoginMemoryAccount,
+} from '../utils/loginMemory';
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
@@ -14,10 +20,26 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberPassword, setRememberPassword] = useState(false);
   const [error, setError] = useState('');
   const [pageMotion, setPageMotion] = useState({ x: 0, y: 0 });
   const [pageActive, setPageActive] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
+  const [historyAccounts, setHistoryAccounts] = useState<LoginMemoryAccount[]>([]);
+  const [passwordFromMemory, setPasswordFromMemory] = useState(false);
+
+  useEffect(() => {
+    const memory = loadLoginMemory();
+    setHistoryAccounts(memory.accounts);
+
+    if (!memory.lastEmail) return;
+
+    const matched = findLoginMemoryAccount(memory.accounts, memory.lastEmail);
+    setEmail(memory.lastEmail);
+    setPassword(matched?.rememberedPassword ?? '');
+    setRememberPassword(Boolean(matched?.rememberedPassword));
+    setPasswordFromMemory(Boolean(matched?.rememberedPassword));
+  }, []);
 
   const handlePageMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -36,6 +58,35 @@ export default function LoginPage() {
     setPageActive(false);
   };
 
+  const applyHistoryAccount = (
+    nextEmail: string,
+    accounts: LoginMemoryAccount[] = historyAccounts,
+  ) => {
+    const matched = findLoginMemoryAccount(accounts, nextEmail);
+    setEmail(nextEmail);
+    setPassword(matched?.rememberedPassword ?? '');
+    setRememberPassword(Boolean(matched?.rememberedPassword));
+    setPasswordFromMemory(Boolean(matched?.rememberedPassword));
+  };
+
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+
+    const matched = findLoginMemoryAccount(historyAccounts, value);
+    if (matched) {
+      setPassword(matched.rememberedPassword ?? '');
+      setRememberPassword(Boolean(matched.rememberedPassword));
+      setPasswordFromMemory(Boolean(matched.rememberedPassword));
+      return;
+    }
+
+    if (passwordFromMemory) {
+      setPassword('');
+    }
+    setRememberPassword(false);
+    setPasswordFromMemory(false);
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -48,11 +99,26 @@ export default function LoginPage() {
 
     try {
       await login(emailValidation.normalized, password);
+      const nextMemory = saveLoginMemory({
+        email: emailValidation.normalized,
+        password,
+        rememberPassword,
+      });
+      setHistoryAccounts(nextMemory.accounts);
+      setEmail(nextMemory.lastEmail);
+      setPassword(rememberPassword ? password : '');
+      setPasswordFromMemory(rememberPassword);
       nav('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败');
     }
   };
+
+  const selectedHistoryEmail = historyAccounts.some(
+    (account) => account.email === email.trim().toLowerCase(),
+  )
+    ? email.trim().toLowerCase()
+    : '';
 
   return (
     <AppShell showDecor={false}>
@@ -122,7 +188,7 @@ export default function LoginPage() {
             </h2>
             <p>
               {passwordFocused
-                ? '聚焦密码框后，小搭子会主动背过身，不会盯着你的密码输入。'
+                ? '聚焦密码框后，小鸭子会主动背过身，不会盯着你的密码输入。'
                 : '现在不只是左边一小块区域，鼠标在整个登录界面移动时，它都会轻轻跟着你转动视线。'}
             </p>
           </div>
@@ -139,63 +205,108 @@ export default function LoginPage() {
           <p className="auth-lead muted">登录后继续寻找你的游戏搭子</p>
           <input
             type="email"
-            placeholder="邮箱"
+            placeholder="邮箱账号"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => handleEmailChange(e.target.value)}
+            autoComplete="username"
+            list="login-account-history"
             required
           />
-          <div className="password-field">
-            <input
-              type={showPassword ? 'text' : 'password'}
-              placeholder="密码"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onFocus={() => setPasswordFocused(true)}
-              onBlur={() => setPasswordFocused(false)}
-              autoComplete="current-password"
-              required
-            />
-            <button
-              type="button"
-              className="password-toggle"
-              onClick={() => setShowPassword((v) => !v)}
-              aria-label={showPassword ? '隐藏密码' : '显示密码'}
-              aria-pressed={showPassword}
-            >
-              {showPassword ? (
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                  <line x1="1" y1="1" x2="23" y2="23" />
-                </svg>
-              ) : (
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              )}
-            </button>
+          <datalist id="login-account-history">
+            {historyAccounts.map((account) => (
+              <option key={account.email} value={account.email} />
+            ))}
+          </datalist>
+          {historyAccounts.length > 0 && (
+            <div className="login-history-row">
+              <select
+                value={selectedHistoryEmail}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  applyHistoryAccount(e.target.value);
+                }}
+                className="login-history-select"
+              >
+                <option value="">选择本机登录过的账号</option>
+                {historyAccounts.map((account) => (
+                  <option key={account.email} value={account.email}>
+                    {account.email}
+                    {account.rememberedPassword ? '（已记住密码）' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="password-entry-row">
+            <div className="password-field">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="密码"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setPasswordFromMemory(false);
+                }}
+                onFocus={() => setPasswordFocused(true)}
+                onBlur={() => setPasswordFocused(false)}
+                autoComplete="current-password"
+                required
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? '隐藏密码' : '显示密码'}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? (
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                  >
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                ) : (
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden
+                  >
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </button>
+            </div>
+            <label className="checkbox-row remember-password-row">
+              <input
+                type="checkbox"
+                className="checkbox-input"
+                checked={rememberPassword}
+                onChange={(e) => setRememberPassword(e.target.checked)}
+              />
+              <span className="checkbox-custom" aria-hidden="true" />
+              <span className="checkbox-text">记住密码</span>
+            </label>
           </div>
+          <p className="login-memory-tip muted small">
+            账号记录和已勾选的密码只保存在当前设备。
+          </p>
           {error && <p className="error">{error}</p>}
           <button type="submit" className="btn-primary">
             登录
@@ -204,7 +315,7 @@ export default function LoginPage() {
             <Link to="/forgot-password">忘记密码？</Link>
           </p>
           <p className="auth-footer">
-            没有账号？ <Link to="/register">注册</Link>
+            没有账号？<Link to="/register">注册</Link>
           </p>
         </form>
       </div>

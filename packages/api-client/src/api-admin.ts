@@ -21,6 +21,37 @@ adminOverview: () =>
         actor: { id: string; nickname: string; role: string };
       }>;
     }>('/admin/overview'),
+  adminAiStats: () =>
+    request<{
+      todayCalls: number;
+      totalCalls: number;
+      sceneCounts: Record<string, number>;
+      successRate: number;
+      failedCalls: number;
+      averageLatencyMs: number;
+      modelDistribution: Record<string, number>;
+      matchFeedback: {
+        total: number;
+        suitable: number;
+        unsuitable: number;
+        ignored: number;
+        pending: number;
+      };
+      moderationSuggestions: {
+        total: number;
+        adopted: number;
+        ignored: number;
+        pending: number;
+      };
+    }>('/admin/ai/stats'),
+  adminMarkAiModerationSuggestionAction: (
+    reportId: string,
+    body: { adminAction: 'adopted' | 'ignored' },
+  ) =>
+    request<{ ok: true }>(`/admin/ai/moderation-suggestions/${reportId}/action`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
   adminListReports: (status?: string) =>
     request<
       Array<{

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '@gamebuddy/api-client';
+import type { AiMatchCandidate, MatchRecommendationFeedback } from '@gamebuddy/api-client';
 import type { GameFieldSchema } from '@gamebuddy/shared';
 import {
   GAME_SERVER_REGION_FIELD,
@@ -10,6 +11,7 @@ import {
   requiresServerRegionSelection,
 } from '@gamebuddy/shared';
 import { ThemeSelect } from '../components/ThemeSelect';
+import { AiMatchPanel } from '../components/AiMatchPanel';
 import { DynamicProfileForm } from '../components/DynamicProfileForm';
 import { PageHeader } from '../components/PageHeader';
 import { EmptyState } from '../components/EmptyState';
@@ -69,6 +71,10 @@ export default function GameDetailPage() {
   const [rankFilter, setRankFilter] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [aiMatching, setAiMatching] = useState(false);
+  const [aiMatchError, setAiMatchError] = useState('');
+  const [aiMatchCandidates, setAiMatchCandidates] = useState<AiMatchCandidate[]>([]);
+  const [aiMatchFeedback, setAiMatchFeedback] = useState<Record<string, MatchRecommendationFeedback | undefined>>({});
   const [tab, setTab] = useState<Tab>('create');
   const [formResetKey, setFormResetKey] = useState(0);
   const [editingProfile, setEditingProfile] = useState<SavedProfile | null>(null);
@@ -190,6 +196,55 @@ export default function GameDetailPage() {
     } catch (err) {
       safety.showInviteError(err instanceof Error ? err.message : '发送失败');
     }
+  };
+
+  const runAiMatch = () => {
+    guard(async () => {
+      if (!id) return;
+      setAiMatching(true);
+      setAiMatchError('');
+      try {
+        const result = await api.createMatchRecommendations({
+          gameId: id,
+          rank: rankDisabled ? undefined : rankFilter || undefined,
+          mode: lockedMode || undefined,
+          region: lockedRegion || undefined,
+          limit: 5,
+        });
+        setAiMatchCandidates(result.candidates);
+        setAiMatchFeedback({});
+      } catch (err) {
+        setAiMatchError(err instanceof Error ? err.message : 'AI 推荐失败');
+      } finally {
+        setAiMatching(false);
+      }
+    });
+  };
+
+  const sendAiMatchFeedback = (
+    candidate: AiMatchCandidate,
+    feedback: MatchRecommendationFeedback,
+  ) => {
+    guard(async () => {
+      if (!id) return;
+      setAiMatchFeedback((current) => ({
+        ...current,
+        [candidate.userId]: feedback,
+      }));
+      try {
+        await api.submitMatchRecommendationFeedback({
+          gameId: id,
+          candidateUserId: candidate.userId,
+          feedback,
+        });
+      } catch (err) {
+        setAiMatchError(err instanceof Error ? err.message : '反馈提交失败');
+        setAiMatchFeedback((current) => ({
+          ...current,
+          [candidate.userId]: undefined,
+        }));
+      }
+    });
   };
 
   const handleDelete = async (profileId: string) => {
@@ -400,6 +455,15 @@ export default function GameDetailPage() {
           >
             {searching ? '查找中…' : '查找'}
           </button>
+          <AiMatchPanel
+            candidates={aiMatchCandidates}
+            loading={aiMatching}
+            error={aiMatchError}
+            feedbackByUserId={aiMatchFeedback}
+            onRecommend={runAiMatch}
+            onInvite={(candidate) => guard(() => invite(candidate.userId))}
+            onFeedback={sendAiMatchFeedback}
+          />
           <ul className="player-list" id="onboarding-player-list">
             {isInviteOnboardingStep && searching ? (
               <EmptyState

@@ -1,9 +1,10 @@
 import { Link, useLocation } from 'react-router-dom';
 
 const ITEMS = [
-  { to: '/admin', label: '概览' },
-  { to: '/admin/reports', label: '举报审核' },
-  { to: '/admin/users', label: '用户管理' },
+  { to: '/admin', label: '姒傝' },
+  { to: '/admin/reports', label: '涓炬姤瀹℃牳' },
+  { to: '/admin/ai', label: 'AI 统计' },
+  { to: '/admin/users', label: '鐢ㄦ埛绠＄悊' },
 ];
 
 export function AdminNav() {

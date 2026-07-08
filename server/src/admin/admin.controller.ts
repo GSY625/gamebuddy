@@ -31,6 +31,19 @@ export class AdminController {
     return this.admin.getOverview();
   }
 
+
+  @Get('ai/stats')
+  aiStats() {
+    return this.admin.getAiStats();
+  }
+
+  @Patch('ai/moderation-suggestions/:reportId/action')
+  markAiModerationSuggestionAction(
+    @Param('reportId') reportId: string,
+    @Body() dto: { adminAction: 'adopted' | 'ignored' },
+  ) {
+    return this.admin.markAiModerationSuggestionAction(reportId, dto.adminAction);
+  }
   @Get('reports')
   listReports(@Query('status') status?: string) {
     return this.admin.listReports(status);

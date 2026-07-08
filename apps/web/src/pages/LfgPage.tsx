@@ -132,6 +132,7 @@ export default function LfgPage() {
   const [playStyle, setPlayStyle] = useState('');
   const [timeNote, setTimeNote] = useState('');
   const [genderPreference, setGenderPreference] = useState('');
+  const [generatingDraft, setGeneratingDraft] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [apps, setApps] = useState<Application[]>([]);
   const [pendingDelete, setPendingDelete] = useState<Post | null>(null);
@@ -223,6 +224,37 @@ export default function LfgPage() {
       setTimeNote('');
       setGenderPreference('');
       load();
+    });
+  };
+
+  const generateLfgDraft = () => {
+    guard(async () => {
+      if (!postGameId) {
+        setToast('请先选择游戏');
+        return;
+      }
+      setGeneratingDraft(true);
+      try {
+        const draft = await api.createLfgDraft({
+          gameId: postGameId,
+          voiceMode: voiceMode || undefined,
+          playStyle: playStyle || undefined,
+          timeNote: timeNote.trim() || undefined,
+          genderPreference: genderPreference || undefined,
+          extraRequirement: desc.trim() || undefined,
+        });
+        setTitle(draft.title);
+        setDesc(draft.description);
+        setVoiceMode(draft.voiceMode ?? '');
+        setPlayStyle(draft.playStyle ?? '');
+        setTimeNote(draft.timeNote ?? '');
+        setGenderPreference(draft.genderPreference ?? '');
+        setToast(draft.riskNotes.length > 0 ? draft.riskNotes[0] : 'AI 草稿已生成，可继续编辑');
+      } catch (err) {
+        setToast(err instanceof Error ? err.message : 'AI 草稿生成失败');
+      } finally {
+        setGeneratingDraft(false);
+      }
     });
   };
 
@@ -567,6 +599,9 @@ export default function LfgPage() {
             <ThemeSelect className="inline-form-select" value={postGameId} onChange={setPostGameId} items={gameItems} required />
             <input placeholder="标题，如：晚上排位缺辅助" value={title} onChange={(e) => setTitle(e.target.value)} required />
             <input placeholder="补充说明" value={desc} onChange={(e) => setDesc(e.target.value)} />
+            <button type="button" className="ghost" disabled={generatingDraft} onClick={generateLfgDraft}>
+              {generatingDraft ? 'AI 生成中...' : 'AI 帮我写'}
+            </button>
             <button type="submit">发帖</button>
           </form>
 

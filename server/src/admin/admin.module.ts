@@ -10,5 +10,6 @@ import { ChatModule } from '../chat/chat.module';
   imports: [NotificationsModule, AuthModule, ChatModule],
   controllers: [AdminController],
   providers: [AdminService, AdminGuard],
+  exports: [AdminService],
 })
 export class AdminModule {}

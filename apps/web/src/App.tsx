@@ -22,6 +22,7 @@ import AdminReportsPage from './pages/AdminReportsPage';
 import AdminReportDetailPage from './pages/AdminReportDetailPage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AdminUserDetailPage from './pages/AdminUserDetailPage';
+import AdminAiStatsPage from './pages/AdminAiStatsPage';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -84,6 +85,14 @@ export default function App() {
           element={
             <AdminRoute>
               <AdminDashboardPage />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="admin/ai"
+          element={
+            <AdminRoute>
+              <AdminAiStatsPage />
             </AdminRoute>
           }
         />

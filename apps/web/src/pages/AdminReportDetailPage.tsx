@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api } from '@gamebuddy/api-client';
+import { api, type ModerationSuggestionResponse } from '@gamebuddy/api-client';
 import { PageHeader } from '../components/PageHeader';
 import { AdminNav } from '../components/AdminNav';
 import { ThemeToast } from '../components/ThemeToast';
@@ -37,11 +37,38 @@ type ReportDetail = {
   }>;
 };
 
+const riskLevelLabels: Record<ModerationSuggestionResponse['riskLevel'], string> = {
+  low: '低风险',
+  medium: '中风险',
+  high: '高风险',
+};
+
+const categoryLabels: Record<
+  ModerationSuggestionResponse['categories'][number],
+  string
+> = {
+  abuse: '辱骂',
+  spam: '垃圾信息',
+  scam: '诈骗',
+  harassment: '骚扰',
+  external_traffic: '外部引流',
+  normal: '正常',
+};
+
+const actionLabels: Record<ModerationSuggestionResponse['suggestedAction'], string> = {
+  none: '仅人工查看',
+  hide_lfg: '建议隐藏招募帖',
+  ban: '建议封禁',
+  manual_review: '建议人工复核',
+};
+
 export default function AdminReportDetailPage() {
   const { reportId } = useParams<{ reportId: string }>();
   const [item, setItem] = useState<ReportDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState<ModerationSuggestionResponse | null>(null);
   const [toast, setToast] = useState('');
   const [reviewNote, setReviewNote] = useState('');
   const [actionTaken, setActionTaken] = useState<'none' | 'ban' | 'hide_lfg'>('none');
@@ -78,6 +105,48 @@ export default function AdminReportDetailPage() {
     }
   };
 
+
+  const requestAiSuggestion = async () => {
+    if (!reportId || aiLoading) return;
+    setAiLoading(true);
+    try {
+      const suggestion = await api.createModerationSuggestion({ reportId });
+      setAiSuggestion(suggestion);
+      setToast('AI 审核建议已生成');
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'AI 审核建议生成失败');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const applyAiSuggestion = async () => {
+    if (!aiSuggestion || !item) return;
+    const nextAction =
+      aiSuggestion.suggestedAction === 'ban'
+        ? 'ban'
+        : aiSuggestion.suggestedAction === 'hide_lfg' && item.targetType === 'lfg_post'
+          ? 'hide_lfg'
+          : 'none';
+    const note = [
+      `AI 建议：风险等级 ${riskLevelLabels[aiSuggestion.riskLevel]}，置信度 ${aiSuggestion.confidence}%`,
+      `分类：${aiSuggestion.categories.map((category) => categoryLabels[category]).join('、')}`,
+      `建议动作：${actionLabels[aiSuggestion.suggestedAction]}`,
+      `原因：${aiSuggestion.reason}`,
+    ].join('\n');
+
+    setReviewNote((current) => (current.trim() ? `${current.trim()}\n\n${note}` : note));
+    setActionTaken(nextAction);
+    await api.adminMarkAiModerationSuggestionAction(item.id, { adminAction: 'adopted' });
+    setToast('AI 建议已写入备注，请确认后再提交');
+  };
+
+  const ignoreAiSuggestion = async () => {
+    if (!aiSuggestion || !item) return;
+    await api.adminMarkAiModerationSuggestionAction(item.id, { adminAction: 'ignored' });
+    setAiSuggestion(null);
+    setToast('已忽略 AI 建议');
+  };
   if (loading) {
     return <div className="loading page-wrap">加载举报详情中...</div>;
   }
@@ -159,6 +228,41 @@ export default function AdminReportDetailPage() {
               查看该用户
             </Link>
           </div>
+        </section>
+        <section className="glass-panel admin-section">
+          <div className="admin-section-head">
+            <h3>AI 审核建议</h3>
+            {aiSuggestion && (
+              <span className={`admin-badge ${aiSuggestion.riskLevel}`}>
+                {riskLevelLabels[aiSuggestion.riskLevel]}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            className="ghost"
+            disabled={aiLoading}
+            onClick={() => void requestAiSuggestion()}
+          >
+            {aiLoading ? 'AI 分析中...' : '生成 AI 建议'}
+          </button>
+          {aiSuggestion ? (
+            <div className="admin-ai-suggestion">
+              <p><strong>风险等级：</strong>{riskLevelLabels[aiSuggestion.riskLevel]}</p>
+              <p><strong>分类：</strong>{aiSuggestion.categories.map((category) => categoryLabels[category]).join('、')}</p>
+              <p><strong>建议动作：</strong>{actionLabels[aiSuggestion.suggestedAction]}</p>
+              <p><strong>置信度：</strong>{aiSuggestion.confidence}%</p>
+              <p><strong>原因：</strong>{aiSuggestion.reason}</p>
+              <button type="button" onClick={() => void applyAiSuggestion()}>
+                采纳到备注
+              </button>
+              <button type="button" className="ghost" onClick={() => void ignoreAiSuggestion()}>
+                忽略
+              </button>
+            </div>
+          ) : (
+            <p className="muted small">AI 仅提供审核建议，不会自动处理举报。</p>
+          )}
         </section>
       </div>
 

@@ -1,5 +1,6 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { api } from '@gamebuddy/api-client';
 import { ThemeConfirmModal } from '../components/ThemeConfirmModal';
 import { ThemeAlertModal } from '../components/ThemeAlertModal';
 import { ThemeToast } from '../components/ThemeToast';
@@ -19,6 +20,7 @@ export default function ChatPage() {
   const { roomId } = useParams<{ roomId: string }>();
   const nav = useNavigate();
   const { user } = useAuth();
+  const [icebreakerLoading, setIcebreakerLoading] = useState(false);
   const {
     meta,
     messages,
@@ -80,6 +82,28 @@ export default function ChatPage() {
     },
     [setMemberLimitEdit],
   );
+
+  const createChatIcebreaker = useCallback(async () => {
+    if (!roomId || icebreakerLoading) return;
+
+    setIcebreakerLoading(true);
+    try {
+      const hasTextMessage = messages.some((message) => message.type === 'text');
+      const result = await api.createChatIcebreaker({
+        roomId,
+        contextType: hasTextMessage ? 'team_invite' : 'first_message',
+      });
+      setText(result.message);
+      setNotifyToast({
+        title: 'AI 破冰',
+        message: '已插入输入框，请确认后手动发送',
+      });
+    } catch (err) {
+      setAlert({ message: err instanceof Error ? err.message : 'AI 破冰失败' });
+    } finally {
+      setIcebreakerLoading(false);
+    }
+  }, [icebreakerLoading, messages, roomId, setAlert, setNotifyToast, setText]);
 
   if (loading && !meta) {
     return (
@@ -221,6 +245,14 @@ export default function ChatPage() {
               onKeyDown={(event) => event.key === 'Enter' && send()}
               placeholder="杈撳叆娑堟伅锛孈 鍙彁鍙婃垚鍛?.."
             />
+            <button
+              type="button"
+              className="ghost"
+              disabled={icebreakerLoading}
+              onClick={() => void createChatIcebreaker()}
+            >
+              {icebreakerLoading ? 'AI...' : 'AI 破冰'}
+            </button>
             <button type="button" onClick={send}>
               鍙戦€?
             </button>

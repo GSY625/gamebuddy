@@ -426,3 +426,51 @@ model AuthSession {
   @@index([revokedAt])
   @@map("auth_sessions")
 }
+
+model AiInteractionLog {
+  id            String   @id @default(uuid())
+  userId        String?  @map("user_id")
+  scene         String
+  model         String
+  inputSummary  String   @map("input_summary")
+  outputSummary String?  @map("output_summary")
+  latencyMs     Int      @map("latency_ms")
+  status        String
+  errorMessage  String?  @map("error_message")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([scene, createdAt])
+  @@map("ai_interaction_logs")
+}
+
+model AiMatchRecommendation {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  gameId          String   @map("game_id")
+  candidateUserId String   @map("candidate_user_id")
+  score           Int
+  reasons         String
+  icebreaker      String
+  feedback        String?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([userId, gameId, createdAt])
+  @@index([candidateUserId, createdAt])
+  @@map("ai_match_recommendations")
+}
+
+model AiModerationSuggestion {
+  id              String   @id @default(uuid())
+  reportId        String   @map("report_id")
+  riskLevel       String   @map("risk_level")
+  categories      String
+  reason          String
+  suggestedAction String   @map("suggested_action")
+  confidence      Int
+  adminAction     String?  @map("admin_action")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([reportId, createdAt])
+  @@map("ai_moderation_suggestions")
+}

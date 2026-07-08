@@ -280,6 +280,134 @@ export class AdminService {
     };
   }
 
+
+  private numberValue(value: unknown) {
+    if (typeof value === 'bigint') return Number(value);
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') return Number(value) || 0;
+    if (value && typeof value === 'object' && 'toString' in value) {
+      const parsed = Number(value.toString());
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+  }
+
+  private countMap(rows: Array<Record<string, unknown>>, key = 'key') {
+    return Object.fromEntries(
+      rows.map((row) => [String(row[key] ?? 'unknown'), this.numberValue(row.count)]),
+    );
+  }
+
+  async getAiStats() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [summaryRows, sceneRows, modelRows, feedbackRows, moderationRows] =
+      await Promise.all([
+        this.prisma.$queryRaw<
+          Array<{
+            total_calls: unknown;
+            today_calls: unknown;
+            success_calls: unknown;
+            failed_calls: unknown;
+            avg_latency_ms: unknown;
+          }>
+        >`
+          SELECT
+            COUNT(*) AS total_calls,
+            COUNT(*) FILTER (WHERE "created_at" >= ${today}) AS today_calls,
+            COUNT(*) FILTER (WHERE "status" = 'success') AS success_calls,
+            COUNT(*) FILTER (WHERE "status" = 'failed') AS failed_calls,
+            COALESCE(AVG("latency_ms"), 0) AS avg_latency_ms
+          FROM "ai_interaction_logs"
+        `,
+        this.prisma.$queryRaw<Array<{ key: string; count: unknown }>>`
+          SELECT "scene" AS key, COUNT(*) AS count
+          FROM "ai_interaction_logs"
+          GROUP BY "scene"
+          ORDER BY count DESC
+        `,
+        this.prisma.$queryRaw<Array<{ key: string; count: unknown }>>`
+          SELECT "model" AS key, COUNT(*) AS count
+          FROM "ai_interaction_logs"
+          GROUP BY "model"
+          ORDER BY count DESC
+        `,
+        this.prisma.$queryRaw<Array<{ key: string; count: unknown }>>`
+          SELECT COALESCE("feedback", 'pending') AS key, COUNT(*) AS count
+          FROM "ai_match_recommendations"
+          GROUP BY COALESCE("feedback", 'pending')
+          ORDER BY count DESC
+        `,
+        this.prisma.$queryRaw<Array<{ key: string; count: unknown }>>`
+          SELECT COALESCE("admin_action", 'pending') AS key, COUNT(*) AS count
+          FROM "ai_moderation_suggestions"
+          GROUP BY COALESCE("admin_action", 'pending')
+          ORDER BY count DESC
+        `,
+      ]);
+
+    const summary = summaryRows[0] ?? {
+      total_calls: 0,
+      today_calls: 0,
+      success_calls: 0,
+      failed_calls: 0,
+      avg_latency_ms: 0,
+    };
+    const totalCalls = this.numberValue(summary.total_calls);
+    const successCalls = this.numberValue(summary.success_calls);
+    const failedCalls = this.numberValue(summary.failed_calls);
+    const feedback = this.countMap(feedbackRows);
+    const moderation = this.countMap(moderationRows);
+
+    return {
+      todayCalls: this.numberValue(summary.today_calls),
+      totalCalls,
+      sceneCounts: this.countMap(sceneRows),
+      successRate: totalCalls > 0 ? Math.round((successCalls / totalCalls) * 1000) / 10 : 0,
+      failedCalls,
+      averageLatencyMs: Math.round(this.numberValue(summary.avg_latency_ms)),
+      modelDistribution: this.countMap(modelRows),
+      matchFeedback: {
+        total: feedbackRows.reduce((sum, row) => sum + this.numberValue(row.count), 0),
+        suitable: feedback.suitable ?? 0,
+        unsuitable: feedback.unsuitable ?? 0,
+        ignored: feedback.ignored ?? 0,
+        pending: feedback.pending ?? 0,
+      },
+      moderationSuggestions: {
+        total: moderationRows.reduce((sum, row) => sum + this.numberValue(row.count), 0),
+        adopted: moderation.adopted ?? 0,
+        ignored: moderation.ignored ?? 0,
+        pending: moderation.pending ?? 0,
+      },
+    };
+  }
+
+
+  async markAiModerationSuggestionAction(
+    reportId: string,
+    adminAction: 'adopted' | 'ignored',
+  ) {
+    if (adminAction !== 'adopted' && adminAction !== 'ignored') {
+      throw new BadRequestException('Invalid AI suggestion action');
+    }
+
+    await this.prisma.$executeRaw`
+      UPDATE "ai_moderation_suggestions"
+      SET "admin_action" = ${adminAction}
+      WHERE "id" = (
+        SELECT "id"
+        FROM "ai_moderation_suggestions"
+        WHERE "report_id" = ${reportId}
+        ORDER BY "created_at" DESC
+        LIMIT 1
+      )
+    `;
+
+    return { ok: true };
+  }
+
   async listReports(status?: string) {
     return this.prisma.report.findMany({
       where: status ? { reviewStatus: status } : undefined,
