@@ -11,7 +11,7 @@
     "dev:server": "npm run dev -w server",
     "dev:web": "npm run dev -w @gamebuddy/web",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
-    "build": "npm run build -w server && npm run build -w @gamebuddy/web",
+    "build": "npm run build -w @gamebuddy/shared && npm run build -w server && npm run build -w @gamebuddy/web",
     "validate:maintainability": "tsx scripts/validate-shared.ts && tsx scripts/validate-invites.ts && tsx scripts/validate-admin.ts && tsx scripts/validate-chat-room.ts",
     "db:migrate": "npm run db:migrate -w server",
     "db:seed": "npm run db:seed -w server",
