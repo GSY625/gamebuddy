@@ -5,6 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AppLoggerService } from '../logging/app-logger.service';
 import { AiLogService } from './ai-log.service';
 import type {
   AiChatCompletionOptions,
@@ -44,11 +45,70 @@ function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function parseProviderError(status: number, body: string) {
+  const trimmedBody = body.trim();
+  let code = '';
+  let message = '';
+
+  try {
+    const parsed = JSON.parse(trimmedBody) as {
+      error?: {
+        code?: string;
+        message?: string;
+      };
+      code?: string;
+      message?: string;
+    };
+    code = parsed.error?.code?.trim() || parsed.code?.trim() || '';
+    message = parsed.error?.message?.trim() || parsed.message?.trim() || '';
+  } catch {
+    message = trimmedBody;
+  }
+
+  const normalizedMessage = message.toLowerCase();
+  const isModelError =
+    code === 'model_not_found' ||
+    normalizedMessage.includes('does not exist') ||
+    normalizedMessage.includes('do not have access');
+
+  if (isModelError) {
+    return {
+      publicMessage:
+        'AI 模型配置错误：当前模型不存在或账号无权限，请检查 AI_MODEL_FAST / AI_MODEL_QUALITY',
+      providerCode: code || 'model_not_found',
+      providerMessage: message || trimmedBody,
+    };
+  }
+
+  if (status === 401 || status === 403) {
+    return {
+      publicMessage: 'AI 服务鉴权失败，请检查 DASHSCOPE_API_KEY 配置',
+      providerCode: code || `http_${status}`,
+      providerMessage: message || trimmedBody,
+    };
+  }
+
+  if (status >= 500) {
+    return {
+      publicMessage: 'AI 服务暂时不可用，请稍后再试',
+      providerCode: code || `http_${status}`,
+      providerMessage: message || trimmedBody,
+    };
+  }
+
+  return {
+    publicMessage: 'AI 推荐暂时不可用，请稍后再试',
+    providerCode: code || `http_${status}`,
+    providerMessage: message || trimmedBody,
+  };
+}
+
 @Injectable()
 export class AiProviderService {
   constructor(
     private config: ConfigService,
     private logs: AiLogService,
+    private logger: AppLoggerService,
   ) {}
 
   getHealth(): AiHealthStatus {
@@ -106,9 +166,15 @@ export class AiProviderService {
 
         if (!response.ok) {
           const body = await response.text().catch(() => response.statusText);
-          throw new BadGatewayException(
-            `DashScope request failed: ${response.status} ${body.slice(0, 300)}`,
-          );
+          const parsedError = parseProviderError(response.status, body);
+          this.logger.warn('ai.provider.request_failed', {
+            provider: 'dashscope',
+            status: response.status,
+            model: providerConfig.model,
+            providerCode: parsedError.providerCode,
+            providerMessage: parsedError.providerMessage.slice(0, 500),
+          });
+          throw new BadGatewayException(parsedError.publicMessage);
         }
 
         const raw = (await response.json()) as DashScopeChatCompletionResponse;
@@ -161,9 +227,14 @@ export class AiProviderService {
         throw error;
       }
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new GatewayTimeoutException('DashScope request timed out');
+        this.logger.warn('ai.provider.request_timeout', {
+          provider: 'dashscope',
+          model: model || options.modelTier || 'unknown',
+          timeoutMs: REQUEST_TIMEOUT_MS,
+        });
+        throw new GatewayTimeoutException('AI 服务响应超时，请稍后再试');
       }
-      throw new BadGatewayException('DashScope request failed');
+      throw new BadGatewayException('AI 服务请求失败，请稍后再试');
     }
   }
 

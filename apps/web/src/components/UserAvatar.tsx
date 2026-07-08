@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+
 type Props = {
   url?: string | null;
   name?: string;
@@ -14,7 +16,12 @@ export function UserAvatar({
   className = '',
   status,
 }: Props) {
+  const [imgFailed, setImgFailed] = useState(false);
   const initial = name.trim().charAt(0).toUpperCase() || '?';
+
+  useEffect(() => {
+    setImgFailed(false);
+  }, [url]);
 
   const statusClass =
     status === 'online'
@@ -23,14 +30,20 @@ export function UserAvatar({
         ? 'user-avatar-status-invisible'
         : '';
 
+  const canShowImage = Boolean(url) && !imgFailed;
+
   return (
     <span
       className={`user-avatar ${statusClass} ${className}`.trim()}
       style={{ width: size, height: size }}
       aria-hidden={!name}
     >
-      {url ? (
-        <img src={url} alt={name ? `${name}的头像` : '头像'} />
+      {canShowImage ? (
+        <img
+          src={url ?? undefined}
+          alt={name ? `${name}的头像` : '头像'}
+          onError={() => setImgFailed(true)}
+        />
       ) : (
         <span className="user-avatar-fallback">{initial}</span>
       )}
