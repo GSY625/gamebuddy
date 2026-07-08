@@ -9,6 +9,8 @@ type Props = {
   status?: 'online' | 'invisible';
 };
 
+type ImageState = 'idle' | 'loading' | 'loaded' | 'failed';
+
 export function UserAvatar({
   url,
   name = '',
@@ -16,12 +18,40 @@ export function UserAvatar({
   className = '',
   status,
 }: Props) {
-  const [imgFailed, setImgFailed] = useState(false);
+  const normalizedUrl = url?.trim() ?? '';
+  const [imageState, setImageState] = useState<ImageState>(
+    normalizedUrl ? 'loading' : 'idle',
+  );
   const initial = name.trim().charAt(0).toUpperCase() || '?';
 
   useEffect(() => {
-    setImgFailed(false);
-  }, [url]);
+    if (!normalizedUrl) {
+      setImageState('idle');
+      return;
+    }
+
+    let cancelled = false;
+    const image = new window.Image();
+    setImageState('loading');
+
+    image.onload = () => {
+      if (!cancelled) {
+        setImageState('loaded');
+      }
+    };
+    image.onerror = () => {
+      if (!cancelled) {
+        setImageState('failed');
+      }
+    };
+    image.src = normalizedUrl;
+
+    return () => {
+      cancelled = true;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [normalizedUrl]);
 
   const statusClass =
     status === 'online'
@@ -30,7 +60,7 @@ export function UserAvatar({
         ? 'user-avatar-status-invisible'
         : '';
 
-  const canShowImage = Boolean(url) && !imgFailed;
+  const canShowImage = imageState === 'loaded';
 
   return (
     <span
@@ -39,11 +69,7 @@ export function UserAvatar({
       aria-hidden={!name}
     >
       {canShowImage ? (
-        <img
-          src={url ?? undefined}
-          alt={name ? `${name}的头像` : '头像'}
-          onError={() => setImgFailed(true)}
-        />
+        <img src={normalizedUrl} alt="" aria-hidden="true" />
       ) : (
         <span className="user-avatar-fallback">{initial}</span>
       )}
